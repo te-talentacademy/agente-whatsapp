@@ -55,6 +55,10 @@ def _compose_reply(job: Job) -> tuple[str | None, str | None]:
 def handle_job(job: Job) -> None:
     """Atiende una ficha de la fila. Jamás deja escapar un error."""
     try:
+        if not job.message_ids:
+            # Turno vacío (nada pendiente que cubrir): se cierra sin decir nada.
+            complete(job)
+            return
         if job.reply:
             # Reintento de envío: la respuesta ya se pensó; no se vuelve a pagar.
             reply = job.reply

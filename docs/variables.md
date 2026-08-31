@@ -60,7 +60,17 @@ Si arrancas sin volumen, funciona igual, pero te lo recuerda en los registros.
 | `OPENROUTER_API_KEY` | Tu llave de OpenRouter, la central que conecta con el modelo que piensa. | — |
 | `OPENROUTER_MODEL` | Qué modelo piensa las respuestas. Ya trae uno elegido, el mismo que usa un sistema real en producción: rápido, bueno y muy barato (`deepseek/deepseek-v4-flash`). Solo cámbiala si sabes lo que buscas. | el recomendado |
 | `AGENT_NAME` | El nombre con el que tu agente se presenta (sustituye `{nombre}` en `personalidad.md`). | `Mi agente` |
-| `DAILY_MESSAGE_LIMIT` | Tope de respuestas con cerebro por día, contando a todas las personas: tu cinturón de seguridad de gasto. Al llegar al tope, el agente avisa con un mensaje fijo y deja de gastar hasta mañana. Vacía = 200. Un `0` escrito a propósito = sin límite. | 200 |
+| `DAILY_MESSAGE_LIMIT` | Tope de **solicitudes al modelo** por día, contando a todas las personas: tu cinturón de seguridad de gasto. Se aparta el cupo ANTES de cada solicitud (un intento que se corta por la red también cuenta, porque pudo cobrarse); solo se devuelve si el proveedor rechazó la solicitud sin procesarla. Al llegar al tope, el agente avisa con un mensaje fijo y deja de gastar hasta mañana. Vacía = 200. Un `0` escrito a propósito = sin límite. | 200 |
+
+> **Privacidad del cerebro**: con `FEATURE_BRAIN=on`, cada turno envía a
+> OpenRouter el mensaje de la persona, las últimas vueltas de esa conversación,
+> tu `personalidad.md` y los fragmentos de tu libreta que vengan al caso.
+> Todas las solicitudes llevan de fábrica la política `data_collection: deny`:
+> OpenRouter solo enruta a proveedores que declaran no almacenar ni entrenar
+> con esos datos. Si para el modelo elegido no existe un proveedor que cumpla,
+> la solicitud se rechaza (lo verás en los registros) y el agente responde con
+> el acuse: antes sin respuesta pensada que con tus datos en manos de quien no
+> debe.
 
 > **La personalidad no es una variable**: vive en el archivo `personalidad.md`
 > de tu copia. Lo editas desde GitHub (el lápiz, arriba a la derecha del

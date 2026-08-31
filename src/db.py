@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     first_pending_at REAL NOT NULL,
     claimed_at REAL,
     last_error TEXT,
-    reply TEXT
+    reply TEXT,
+    reply_upto INTEGER
 );
 
 -- Historial de conversación por persona (lo que dijo cada quien), para que
@@ -78,6 +79,7 @@ def connect() -> sqlite3.Connection:
 # versión anterior (en tu volumen) se completa sola al arrancar.
 _ADDED_COLUMNS = [
     ("jobs", "reply", "TEXT"),
+    ("jobs", "reply_upto", "INTEGER"),
 ]
 
 

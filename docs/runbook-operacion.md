@@ -35,6 +35,17 @@ pendientes y el registro de mensajes ya atendidos sobreviven a cada
 despliegue. Si en los registros ves el aviso de «disco temporal», te falta
 adjuntar el volumen: hazlo una vez y olvídate.
 
+## A dónde viajan los datos cuando el cerebro está encendido
+
+Con el cerebro apagado, nada sale de tu servicio salvo el acuse hacia Meta.
+Con `FEATURE_BRAIN=on`, cada turno envía a OpenRouter (tu cuenta) el mensaje,
+las últimas vueltas de esa conversación, tu personalidad y los fragmentos de
+tu libreta relevantes; OpenRouter lo pasa al proveedor del modelo. Tu agente
+exige en cada solicitud la política «sin recolección de datos»
+(`data_collection: deny`), así que solo se usan proveedores que declaran no
+guardar ni entrenar con ello. Cuéntaselo a tus clientes si tu negocio lo
+requiere y no metas en la libreta datos que no quieras que salgan de casa.
+
 ## El texto de los mensajes en los registros
 
 De fábrica, el agente escribe en los registros el texto de cada mensaje que
@@ -76,8 +87,10 @@ está en la línea de al lado:
   OpenRouter.
 - `sin saldo en OpenRouter` → recarga tu cuenta (el gasto normal es de
   centavos al día).
-- `modelo no encontrado` → deja `OPENROUTER_MODEL` vacía para usar el
-  recomendado.
+- `modelo o proveedor no disponible con la política de privacidad` → el
+  modelo que elegiste no tiene un proveedor que cumpla «no guardar ni entrenar
+  con tus datos». Deja `OPENROUTER_MODEL` vacía para usar el recomendado (que
+  sí lo cumple) o elige otro modelo con esa política.
 - `servicio saturado` → pasajero: el agente reintenta solo con pausa.
 - `Tope diario de respuestas alcanzado` → tu cinturón de seguridad actuó;
   sube `DAILY_MESSAGE_LIMIT` si el tope te quedó corto.

@@ -34,20 +34,32 @@ def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def _limit_reached() -> bool:
+def _reserve() -> bool:
+    """Aparta UNA solicitud del cupo diario ANTES de llamar al modelo.
+
+    Se cuenta el intento, no la respuesta: un timeout pudo haberse cobrado. Si
+    el cupo ya está lleno, devuelve False sin apartar nada. Todo en una sola
+    transacción para que dos turnos no se cuelen a la vez.
+    """
     limit = config.daily_message_limit()
-    if limit is None:
-        return False
     with db.transaction() as conn:
         row = conn.execute("SELECT replies FROM usage WHERE day = ?", (_today(),)).fetchone()
-    return bool(row and row["replies"] >= limit)
-
-
-def _count_reply() -> None:
-    with db.transaction() as conn:
+        used = row["replies"] if row else 0
+        if limit is not None and used >= limit:
+            return False
         conn.execute(
             "INSERT INTO usage (day, replies) VALUES (?, 1)"
             " ON CONFLICT(day) DO UPDATE SET replies = replies + 1",
+            (_today(),),
+        )
+    return True
+
+
+def _release() -> None:
+    """Devuelve una solicitud apartada: solo cuando el proveedor la RECHAZÓ."""
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE usage SET replies = MAX(replies - 1, 0) WHERE day = ?",
             (_today(),),
         )
 
@@ -84,10 +96,6 @@ def think(sender: str, user_text: str) -> Thought:
     if not api_key:
         return Thought(reason="falta OPENROUTER_API_KEY")
 
-    if _limit_reached():
-        logger.warning("Tope diario de respuestas alcanzado (DAILY_MESSAGE_LIMIT); respondo el aviso fijo.")
-        return Thought(text=LIMIT_REACHED_TEXT)
-
     notes = []
     if config.rag_enabled():
         from src.rag import index  # carga perezosa: solo si la libreta está encendida
@@ -98,12 +106,17 @@ def think(sender: str, user_text: str) -> Thought:
     messages.extend(_history(sender))
     messages.append({"role": "user", "content": user_text})
 
+    if not _reserve():
+        logger.warning("Tope diario de solicitudes alcanzado (DAILY_MESSAGE_LIMIT); respondo el aviso fijo.")
+        return Thought(text=LIMIT_REACHED_TEXT)
+
     result = client.complete(messages, config.openrouter_model(), api_key, title=config.agent_name())
     if not result.ok:
+        if result.refundable:
+            _release()
         return Thought(retryable=result.retryable, reason=result.reason)
 
     text = _single_message(result.text)
     _remember(sender, "user", user_text)
     _remember(sender, "assistant", text)
-    _count_reply()
     return Thought(text=text)

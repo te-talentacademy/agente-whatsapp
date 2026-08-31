@@ -60,8 +60,14 @@ La plantilla trae toda la maquinaria. Tú pones lo que la hace TUYA:
 
 - **No es un SaaS.** No hay mensualidad de esta plantilla, no hay panel de
   nadie más, no hay letra chica.
-- **No hay ningún servidor de terceros en medio.** Tus mensajes van de Meta a
-  TU servicio. Nadie más los ve.
+- **No hay ningún intermediario nuestro ni de nadie más que tú no hayas
+  elegido.** Tus mensajes van de Meta a TU servicio en Railway. Cuando
+  enciendes el cerebro, el texto de la conversación (y los fragmentos de tu
+  libreta que vengan al caso) viaja desde tu servicio a OpenRouter y de ahí al
+  proveedor del modelo que piensa la respuesta — con la política de
+  privacidad puesta de fábrica: solo proveedores que **no guardan ni entrenan
+  con tus datos**. Igual con la voz: los audios pasan por tu cuenta de
+  Cartesia. Cada tramo es una cuenta TUYA, con tu llave.
 - **No dependes de nadie**, salvo de tus propias cuentas (Meta, Railway,
   OpenRouter, Cartesia) — todas a tu nombre, todas bajo tu control.
 - **La copia es tuya para siempre.** Puedes leerla, cambiarla, romperla y

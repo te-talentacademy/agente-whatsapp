@@ -34,6 +34,7 @@ class Job:
     texts: list[str]
     kinds: list[str]
     reply: str | None = None  # respuesta ya pensada en un intento anterior
+    reply_upto: int | None = None  # último mensaje (id) que esa respuesta cubre
 
 
 def enqueue(msg: InboundMessage) -> bool:
@@ -69,11 +70,14 @@ def enqueue(msg: InboundMessage) -> bool:
                 # y cambia el turno: la respuesta pensada antes ya no sirve.
                 conn.execute(
                     "UPDATE jobs SET status='pending', attempts=0, available_at=?,"
-                    " first_pending_at=?, last_error=NULL, reply=NULL WHERE sender=?",
+                    " first_pending_at=?, last_error=NULL, reply=NULL, reply_upto=NULL"
+                    " WHERE sender=?",
                     (available, first, msg.sender),
                 )
             # Si está 'claimed', el trabajador en curso ya contará los pendientes
-            # al cerrar y volverá a poner la ficha en espera.
+            # al cerrar y volverá a poner la ficha en espera. Si esa ficha ya
+            # tenía una respuesta pensada, cubre solo hasta `reply_upto`: este
+            # mensaje nuevo queda para el turno siguiente.
         return True
 
 
@@ -92,7 +96,7 @@ def claim_ready_job() -> Job | None:
             (now, now - LEASE_SECONDS),
         )
         row = conn.execute(
-            "SELECT sender, attempts, reply FROM jobs"
+            "SELECT sender, attempts, reply, reply_upto FROM jobs"
             " WHERE status='pending' AND available_at <= ?"
             " ORDER BY available_at LIMIT 1",
             (now,),
@@ -106,11 +110,15 @@ def claim_ready_job() -> Job | None:
             " WHERE sender=?",
             (now, attempts, sender),
         )
+        # Con una respuesta ya pensada, el turno es EXACTAMENTE el conjunto de
+        # mensajes que la originó (hasta reply_upto). Lo que llegó después
+        # espera su propio turno: jamás se cierra con una respuesta ajena.
+        reply_upto = row["reply_upto"] if row["reply"] else None
         messages = conn.execute(
             "SELECT id, kind, body FROM messages"
-            " WHERE sender=? AND processed_at IS NULL"
+            " WHERE sender=? AND processed_at IS NULL AND (? IS NULL OR id <= ?)"
             " ORDER BY received_at, id LIMIT 10",
-            (sender,),
+            (sender, reply_upto, reply_upto),
         ).fetchall()
         return Job(
             sender=sender,
@@ -118,19 +126,25 @@ def claim_ready_job() -> Job | None:
             message_ids=[m["id"] for m in messages],
             texts=[m["body"] for m in messages if m["body"]],
             kinds=[m["kind"] for m in messages],
-            reply=row["reply"],
+            reply=row["reply"] if messages else None,
+            reply_upto=reply_upto,
         )
 
 
 def save_reply(job: Job, text: str) -> None:
-    """Guarda la respuesta pensada ANTES de enviarla.
+    """Guarda la respuesta pensada ANTES de enviarla, atada a sus mensajes.
 
     Si el envío falla y toca reintentar, se reutiliza tal cual: un turno se
-    piensa una sola vez (y se paga una sola vez).
+    piensa una sola vez (y se paga una sola vez). `reply_upto` fija hasta qué
+    mensaje cubre esa respuesta.
     """
     job.reply = text
+    job.reply_upto = max(job.message_ids) if job.message_ids else None
     with db.transaction() as conn:
-        conn.execute("UPDATE jobs SET reply=? WHERE sender=?", (text, job.sender))
+        conn.execute(
+            "UPDATE jobs SET reply=?, reply_upto=? WHERE sender=?",
+            (text, job.reply_upto, job.sender),
+        )
 
 
 def complete(job: Job) -> None:
@@ -156,7 +170,8 @@ def complete(job: Job) -> None:
             # Turno nuevo: la respuesta guardada era del turno anterior.
             conn.execute(
                 "UPDATE jobs SET status='pending', attempts=0, available_at=?,"
-                " first_pending_at=?, claimed_at=NULL, reply=NULL WHERE sender=?",
+                " first_pending_at=?, claimed_at=NULL, reply=NULL, reply_upto=NULL"
+                " WHERE sender=?",
                 (now + DEBOUNCE_SECONDS, now, job.sender),
             )
         else:
