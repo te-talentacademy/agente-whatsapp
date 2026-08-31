@@ -41,10 +41,14 @@ Con el cerebro apagado, nada sale de tu servicio salvo el acuse hacia Meta.
 Con `FEATURE_BRAIN=on`, cada turno envía a OpenRouter (tu cuenta) el mensaje,
 las últimas vueltas de esa conversación, tu personalidad y los fragmentos de
 tu libreta relevantes; OpenRouter lo pasa al proveedor del modelo. Tu agente
-exige en cada solicitud la política «sin recolección de datos»
-(`data_collection: deny`), así que solo se usan proveedores que declaran no
-guardar ni entrenar con ello. Cuéntaselo a tus clientes si tu negocio lo
-requiere y no metas en la libreta datos que no quieras que salgan de casa.
+pide en cada solicitud la política `data_collection: deny`, con la que
+OpenRouter descarta a los proveedores marcados como que recopilan datos o
+entrenan con ellos. No es cero retención: el proveedor elegido puede registrar
+o conservar solicitudes según sus términos, y las políticas de OpenRouter
+aplican igual. Cuéntaselo a tus clientes si tu negocio lo requiere, no metas
+en la libreta datos que no quieras que salgan de casa, y si necesitas una
+garantía más fuerte, revisa en OpenRouter los modelos con endpoints de cero
+retención (`zdr`).
 
 ## El texto de los mensajes en los registros
 
@@ -88,9 +92,9 @@ está en la línea de al lado:
 - `sin saldo en OpenRouter` → recarga tu cuenta (el gasto normal es de
   centavos al día).
 - `modelo o proveedor no disponible con la política de privacidad` → el
-  modelo que elegiste no tiene un proveedor que cumpla «no guardar ni entrenar
-  con tus datos». Deja `OPENROUTER_MODEL` vacía para usar el recomendado (que
-  sí lo cumple) o elige otro modelo con esa política.
+  modelo que elegiste no tiene un proveedor que pase el filtro «sin
+  recopilación de datos». Deja `OPENROUTER_MODEL` vacía para usar el
+  recomendado (que sí lo pasa) o elige otro modelo con esa política.
 - `servicio saturado` → pasajero: el agente reintenta solo con pausa.
 - `Tope diario de respuestas alcanzado` → tu cinturón de seguridad actuó;
   sube `DAILY_MESSAGE_LIMIT` si el tope te quedó corto.

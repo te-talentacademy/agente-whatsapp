@@ -206,6 +206,45 @@ def test_un_mensaje_nuevo_durante_el_envio_no_se_cierra_con_la_respuesta_vieja(m
     assert db.connect().execute("SELECT COUNT(*) AS n FROM messages WHERE processed_at IS NULL").fetchone()["n"] == 0
 
 
+def test_un_mensaje_nuevo_durante_el_backoff_conserva_la_respuesta_pensada(monkeypatch):
+    """Carrera M1 (ventana de backoff): B llega después de fail() y antes del siguiente claim."""
+    import time
+
+    from src import db
+    from src.queue import store
+    from src.webhook.parse import InboundMessage
+
+    monkeypatch.setenv("FEATURE_BRAIN", "on")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "llave-falsa")
+    pensados = []
+    monkeypatch.setattr(client, "complete", lambda messages, *a, **k: pensados.append(messages[-1]["content"]) or client.LlmResult(ok=True, text=f"respuesta a {messages[-1]['content']}"))
+    real = time.time
+    reloj = {"t": 0.0}
+    monkeypatch.setattr(store.time, "time", lambda: real() + reloj["t"])
+    store.enqueue(InboundMessage(wamid="a", sender="521", kind="text", body="primero", timestamp="1"))
+    reloj["t"] = 3.0
+    envios = []
+    resultados = {"ok": False}
+    monkeypatch.setattr(agent, "send_text", lambda to, t: envios.append(t) or client.LlmResult(ok=resultados["ok"], retryable=True, reason="saturado"))
+    agent.handle_job(store.claim_ready_job())            # piensa A; el envío falla -> pending con backoff
+    fila = db.connect().execute("SELECT status, reply, reply_upto FROM jobs WHERE sender='521'").fetchone()
+    assert fila["status"] == "pending" and fila["reply"] == "respuesta a primero" and fila["reply_upto"] == 1
+    store.enqueue(InboundMessage(wamid="b", sender="521", kind="text", body="segundo", timestamp="2"))  # B durante el backoff
+    fila = db.connect().execute("SELECT reply, reply_upto FROM jobs WHERE sender='521'").fetchone()
+    assert fila["reply"] == "respuesta a primero" and fila["reply_upto"] == 1  # se conserva
+    resultados["ok"] = True
+    reloj["t"] = 500
+    segundo = store.claim_ready_job()
+    assert segundo.texts == ["primero"] and segundo.reply == "respuesta a primero"
+    agent.handle_job(segundo)                            # reenvía A sin pensar de nuevo
+    reloj["t"] = 1000
+    tercero = store.claim_ready_job()
+    assert tercero.texts == ["segundo"] and tercero.reply is None
+    agent.handle_job(tercero)
+    assert pensados == ["primero", "segundo"]
+    assert envios == ["respuesta a primero", "respuesta a primero", "respuesta a segundo"]
+
+
 def test_el_tope_cuenta_intentos_aunque_el_proveedor_no_responda(monkeypatch):
     """M2: timeouts ambiguos consumen cupo; los rechazos 4xx lo devuelven."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "llave-falsa")

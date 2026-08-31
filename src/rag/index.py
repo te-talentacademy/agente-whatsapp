@@ -5,7 +5,9 @@ Cómo funciona, en corto:
    documento en fragmentos de unos pocos párrafos y los guarda en un índice de
    búsqueda por palabras dentro de la propia memoria del servicio (SQLite FTS5).
 2. Ante cada pregunta, busca los fragmentos con más palabras en común y se los
-   pasa al cerebro como "tu libreta". Nada sale de tu servicio.
+   pasa al cerebro como "tu libreta". La búsqueda ocurre dentro de tu
+   servicio; los fragmentos elegidos viajan luego al modelo junto con el
+   mensaje (ver docs/runbook-operacion.md, "A dónde viajan los datos").
 
 Si agregas o cambias documentos, Railway redespliega y el índice se rearma solo.
 """

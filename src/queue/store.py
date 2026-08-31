@@ -53,7 +53,7 @@ def enqueue(msg: InboundMessage) -> bool:
         if cur.rowcount == 0:
             return False
         row = conn.execute(
-            "SELECT status, first_pending_at FROM jobs WHERE sender = ?",
+            "SELECT status, first_pending_at, reply FROM jobs WHERE sender = ?",
             (msg.sender,),
         ).fetchone()
         if row is None:
@@ -62,22 +62,30 @@ def enqueue(msg: InboundMessage) -> bool:
                 " first_pending_at) VALUES (?, 'pending', 0, ?, ?)",
                 (msg.sender, now + DEBOUNCE_SECONDS, now),
             )
-        else:
-            first = row["first_pending_at"] if row["status"] == "pending" else now
-            available = min(now + DEBOUNCE_SECONDS, first + DEBOUNCE_CEILING)
-            if row["status"] in ("pending", "dead"):
-                # Un mensaje nuevo da otra oportunidad incluso a una ficha agotada,
-                # y cambia el turno: la respuesta pensada antes ya no sirve.
+        elif row["reply"] is not None:
+            # Hay una respuesta ya pensada (y pagada) esperando su envío: se
+            # conserva tal cual con su límite `reply_upto`; este mensaje nuevo
+            # queda pendiente para el turno siguiente. Si la ficha estaba
+            # agotada, el mensaje nuevo la revive sin tirar esa respuesta.
+            if row["status"] == "dead":
                 conn.execute(
                     "UPDATE jobs SET status='pending', attempts=0, available_at=?,"
-                    " first_pending_at=?, last_error=NULL, reply=NULL, reply_upto=NULL"
-                    " WHERE sender=?",
-                    (available, first, msg.sender),
+                    " first_pending_at=?, last_error=NULL WHERE sender=?",
+                    (now, now, msg.sender),
                 )
-            # Si está 'claimed', el trabajador en curso ya contará los pendientes
-            # al cerrar y volverá a poner la ficha en espera. Si esa ficha ya
-            # tenía una respuesta pensada, cubre solo hasta `reply_upto`: este
-            # mensaje nuevo queda para el turno siguiente.
+        elif row["status"] in ("pending", "dead"):
+            # Sin respuesta pensada, el mensaje nuevo se suma al turno: espera
+            # corta con techo, y otra oportunidad incluso a una ficha agotada.
+            first = row["first_pending_at"] if row["status"] == "pending" else now
+            available = min(now + DEBOUNCE_SECONDS, first + DEBOUNCE_CEILING)
+            conn.execute(
+                "UPDATE jobs SET status='pending', attempts=0, available_at=?,"
+                " first_pending_at=?, last_error=NULL WHERE sender=?",
+                (available, first, msg.sender),
+            )
+        # Si está 'claimed', el trabajador en curso contará los pendientes al
+        # cerrar y volverá a poner la ficha en espera; con respuesta guardada,
+        # solo cubre hasta `reply_upto` y este mensaje espera su propio turno.
         return True
 
 

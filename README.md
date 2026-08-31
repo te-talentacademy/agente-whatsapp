@@ -64,10 +64,14 @@ La plantilla trae toda la maquinaria. Tú pones lo que la hace TUYA:
   elegido.** Tus mensajes van de Meta a TU servicio en Railway. Cuando
   enciendes el cerebro, el texto de la conversación (y los fragmentos de tu
   libreta que vengan al caso) viaja desde tu servicio a OpenRouter y de ahí al
-  proveedor del modelo que piensa la respuesta — con la política de
-  privacidad puesta de fábrica: solo proveedores que **no guardan ni entrenan
-  con tus datos**. Igual con la voz: los audios pasan por tu cuenta de
-  Cartesia. Cada tramo es una cuenta TUYA, con tu llave.
+  proveedor del modelo que piensa la respuesta. Tu agente pide de fábrica la
+  política `data_collection: deny`: OpenRouter **descarta a los proveedores
+  marcados como que recopilan datos o entrenan con ellos**. Sé claro con lo
+  que eso NO es: no es una garantía de cero retención — el proveedor elegido
+  puede registrar o conservar solicitudes según sus propios términos, y las
+  políticas de OpenRouter aplican igual. Igual con la voz: los audios pasan
+  por tu cuenta de Cartesia. Cada tramo es una cuenta TUYA, con tu llave, y
+  tú decides qué información entra a la libreta y a las conversaciones.
 - **No dependes de nadie**, salvo de tus propias cuentas (Meta, Railway,
   OpenRouter, Cartesia) — todas a tu nombre, todas bajo tu control.
 - **La copia es tuya para siempre.** Puedes leerla, cambiarla, romperla y

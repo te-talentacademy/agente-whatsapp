@@ -1,9 +1,12 @@
 """Conexión con OpenRouter: la central que conecta con el modelo que piensa.
 
-Privacidad: cada solicitud lleva la política `data_collection: deny`, que
-obliga a OpenRouter a enrutar SOLO a proveedores que no almacenan ni entrenan
-con los datos del usuario. Sin esa política, OpenRouter podría elegir un
-proveedor que retenga las conversaciones.
+Privacidad: cada solicitud lleva la política `data_collection: deny`, con la
+que OpenRouter EXCLUYE a los proveedores marcados como que recopilan datos o
+entrenan con ellos. OJO con lo que NO garantiza: no es cero retención (eso es
+el control aparte `zdr`), y tanto el registro/retención del proveedor elegido
+según sus propios términos como las políticas del propio OpenRouter siguen
+aplicando. Sin esta política, OpenRouter podría además elegir un proveedor
+que recopile las conversaciones.
 
 Nunca lanza errores hacia arriba. Devuelve un resultado claro:
 - ok         -> texto de la respuesta.
