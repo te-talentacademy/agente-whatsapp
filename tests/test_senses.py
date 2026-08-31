@@ -104,6 +104,25 @@ def test_m2_fallo_pasajero_de_descarga_de_foto_pospone(monkeypatch):
     assert pospuestos and "foto" in pospuestos[0] and cerrados == []
 
 
+def test_m2_llave_rechazada_pospone_y_devuelve_el_cupo(monkeypatch):
+    """M2 ronda 3: 401/403 de Cartesia = rotable -> backoff, jamás perder la nota."""
+    brain_on(monkeypatch)
+    monkeypatch.setenv("FEATURE_VOICE_IN", "on")
+    monkeypatch.setenv("CARTESIA_API_KEY", "llave-vencida")
+    _enqueue_inbound("audio", "w401", "M-AUDIO-401")
+    monkeypatch.setattr(media, "download", lambda mid, kind: media.MediaResult(ok=True, data=b"OggS", mime="audio/ogg"))
+    monkeypatch.setattr(cartesia.httpx, "post", lambda *a, **k: _Resp(401))
+    pospuestos, cerrados = [], []
+    monkeypatch.setattr(agent, "fail", lambda j, r: pospuestos.append(r))
+    monkeypatch.setattr(agent, "complete", lambda j: cerrados.append(1))
+    monkeypatch.setattr(agent, "send_text", lambda to, t: client.LlmResult(ok=True))
+    agent.handle_job(_claim(monkeypatch))
+    assert pospuestos and "CARTESIA_API_KEY" in pospuestos[0] and cerrados == []
+    from src import db
+
+    assert db.connect().execute("SELECT voice FROM usage").fetchone()["voice"] == 0  # cupo devuelto
+
+
 def test_m2_descarte_definitivo_no_bloquea_el_turno(monkeypatch):
     brain_on(monkeypatch)
     monkeypatch.setenv("FEATURE_VOICE_IN", "on")
@@ -173,14 +192,14 @@ def test_stt_usa_plan_b_solo_si_el_primario_no_existe(monkeypatch):
     assert modelos == [cartesia.STT_MODEL, cartesia.STT_FALLBACK_MODEL]
 
 
-def test_cartesia_401_es_refundable_y_5xx_no(monkeypatch):
+def test_cartesia_401_es_refundable_y_ademas_retryable(monkeypatch):
     monkeypatch.setenv("CARTESIA_API_KEY", "llave-falsa")
     monkeypatch.setattr(cartesia.httpx, "post", lambda *a, **k: _Resp(401))
     r = cartesia.transcribe(b"OggS", "audio/ogg")
-    assert not r.ok and r.refundable
+    assert not r.ok and r.refundable and r.retryable  # rotar la llave recupera la nota
     monkeypatch.setattr(cartesia.httpx, "post", lambda *a, **k: _Resp(500))
     r = cartesia.transcribe(b"OggS", "audio/ogg")
-    assert not r.ok and not r.refundable
+    assert not r.ok and not r.refundable and r.retryable
     monkeypatch.delenv("CARTESIA_VOICE_ID", raising=False)
     r = cartesia.synthesize("hola")
     assert not r.ok and r.refundable and "CARTESIA_VOICE_ID" in r.reason

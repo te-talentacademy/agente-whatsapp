@@ -45,9 +45,12 @@ def _headers() -> dict:
 
 def _classify(status: int, body: str) -> VoiceResult:
     if status in (401, 403):
-        return VoiceResult(ok=False, refundable=True, reason="llave de Cartesia rechazada: revisa CARTESIA_API_KEY")
+        # Recuperable rotando la llave: el turno espera (backoff) y el cupo
+        # apartado se devuelve — la nota de voz no se pierde por una rotación.
+        return VoiceResult(ok=False, retryable=True, refundable=True,
+                           reason="llave de Cartesia rechazada: revisa CARTESIA_API_KEY")
     if status == 402:
-        return VoiceResult(ok=False, refundable=True, reason="sin saldo en Cartesia")
+        return VoiceResult(ok=False, retryable=True, refundable=True, reason="sin saldo en Cartesia")
     if status == 429:
         return VoiceResult(ok=False, retryable=True, refundable=True, reason="Cartesia saturada (429)")
     if 400 <= status < 500:
