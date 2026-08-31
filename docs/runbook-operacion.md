@@ -65,6 +65,34 @@ Revisa en orden — es casi siempre uno de estos tres:
   (llave vencida, servicio saturado…). Los fallos pasajeros se reintentan
   solos, con pausas cada vez más largas.
 
+## Si el cerebro no responde (o responde con el acuse)
+
+Con `FEATURE_BRAIN=on`, en los registros verás `RESPUESTA a +52…: "…"` con
+lo que el agente contestó. Si en vez de eso ves el acuse o un aviso, el motivo
+está en la línea de al lado:
+
+- `falta OPENROUTER_API_KEY` → pega tu llave en Variables.
+- `llave rechazada` → la llave está mal copiada o fue revocada; genera otra en
+  OpenRouter.
+- `sin saldo en OpenRouter` → recarga tu cuenta (el gasto normal es de
+  centavos al día).
+- `modelo no encontrado` → deja `OPENROUTER_MODEL` vacía para usar el
+  recomendado.
+- `servicio saturado` → pasajero: el agente reintenta solo con pausa.
+- `Tope diario de respuestas alcanzado` → tu cinturón de seguridad actuó;
+  sube `DAILY_MESSAGE_LIMIT` si el tope te quedó corto.
+
+## Si el agente no usa tus documentos
+
+1. `FEATURE_RAG=on` y `FEATURE_BRAIN=on` las dos.
+2. Los archivos están en `conocimiento/` con extensión `.md` o `.txt`
+   (`README.md` no se indexa).
+3. En los registros del arranque aparece `Libreta lista: N fragmentos` con
+   N mayor que cero. Si dice 0, los archivos no se subieron a tu copia.
+4. La pregunta y el documento comparten palabras clave: el agente subraya por
+   palabras, así que «¿a qué hora abren?» encuentra «horario» si tu documento
+   dice «horario de atención» y «abrimos».
+
 ## Fichas agotadas
 
 Si un mensaje falló cinco veces seguidas, su ficha queda marcada como agotada

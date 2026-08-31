@@ -34,7 +34,25 @@ CREATE TABLE IF NOT EXISTS jobs (
     available_at REAL NOT NULL,
     first_pending_at REAL NOT NULL,
     claimed_at REAL,
-    last_error TEXT
+    last_error TEXT,
+    reply TEXT
+);
+
+-- Historial de conversación por persona (lo que dijo cada quien), para que
+-- el cerebro recuerde el hilo. Se llena solo cuando el cerebro está encendido.
+CREATE TABLE IF NOT EXISTS conversation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_sender ON conversation (sender, id);
+
+-- Contador diario de respuestas con cerebro: el cinturón de seguridad de gasto.
+CREATE TABLE IF NOT EXISTS usage (
+    day TEXT PRIMARY KEY,
+    replies INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -51,8 +69,23 @@ def connect() -> sqlite3.Connection:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=5000")
             conn.executescript(SCHEMA)
+            _migrate(conn)
             _conn = conn
         return _conn
+
+
+# Columnas añadidas después de la primera versión. Una memoria creada con la
+# versión anterior (en tu volumen) se completa sola al arrancar.
+_ADDED_COLUMNS = [
+    ("jobs", "reply", "TEXT"),
+]
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    for table, column, kind in _ADDED_COLUMNS:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
 @contextmanager

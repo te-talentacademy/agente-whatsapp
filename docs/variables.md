@@ -58,15 +58,19 @@ Si arrancas sin volumen, funciona igual, pero te lo recuerda en los registros.
 |---|---|---|
 | `FEATURE_BRAIN` | Enciende el cerebro: las respuestas pensadas de verdad. Como pensar cuesta dinero (poco, pero dinero), viene apagado. | `off` |
 | `OPENROUTER_API_KEY` | Tu llave de OpenRouter, la central que conecta con el modelo que piensa. | — |
-| `OPENROUTER_MODEL` | Qué modelo piensa las respuestas. Ya trae uno elegido: rápido, bueno y muy barato. Solo cámbiala si sabes lo que buscas. | el recomendado |
-| `AGENT_NAME` | El nombre con el que tu agente se presenta. | `Mi agente` |
-| `DAILY_MESSAGE_LIMIT` | Tope de respuestas con cerebro por día: tu cinturón de seguridad de gasto. Vacía = 200. Un `0` escrito a propósito = sin límite. | 200 |
+| `OPENROUTER_MODEL` | Qué modelo piensa las respuestas. Ya trae uno elegido, el mismo que usa un sistema real en producción: rápido, bueno y muy barato (`deepseek/deepseek-v4-flash`). Solo cámbiala si sabes lo que buscas. | el recomendado |
+| `AGENT_NAME` | El nombre con el que tu agente se presenta (sustituye `{nombre}` en `personalidad.md`). | `Mi agente` |
+| `DAILY_MESSAGE_LIMIT` | Tope de respuestas con cerebro por día, contando a todas las personas: tu cinturón de seguridad de gasto. Al llegar al tope, el agente avisa con un mensaje fijo y deja de gastar hasta mañana. Vacía = 200. Un `0` escrito a propósito = sin límite. | 200 |
+
+> **La personalidad no es una variable**: vive en el archivo `personalidad.md`
+> de tu copia. Lo editas desde GitHub (el lápiz, arriba a la derecha del
+> archivo), guardas, y Railway redespliega con el carácter nuevo.
 
 ## La libreta de conocimiento (se enciende en su fase)
 
 | Variable | Qué hace | Valor de fábrica |
 |---|---|---|
-| `FEATURE_RAG` | Enciende la libreta: tu agente responde con TUS documentos (los de la carpeta `conocimiento/` de tu copia). | `off` |
+| `FEATURE_RAG` | Enciende la libreta: tu agente responde con TUS documentos (los archivos `.md` y `.txt` de la carpeta `conocimiento/` de tu copia). Necesita el cerebro encendido. Sin llaves ni servicios extra: la libreta vive dentro de tu propio servicio y se rearma en cada despliegue. | `off` |
 
 ## Oídos, ojos y voz (se encienden en su fase)
 

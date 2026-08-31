@@ -97,3 +97,22 @@ resumen es este:
 
 ¿Algo no salió a la primera? La [guía de operación](docs/runbook-operacion.md)
 trae el "revisa en orden" de cada tropiezo típico.
+
+## Enciende el cerebro y la libreta
+
+Cuando el timbre ya suena, tu agente empieza a pensar con dos variables y un
+archivo:
+
+1. **La llave**: crea tu cuenta en OpenRouter, genera una llave y pégala en
+   Railway como `OPENROUTER_API_KEY`. Enciende el cerebro con
+   `FEATURE_BRAIN=on`. Desde ese redeploy, tu agente responde de verdad.
+2. **Su carácter**: edita `personalidad.md` desde GitHub (el lápiz arriba a la
+   derecha del archivo): quién es, cómo habla, qué hace y qué no. Guarda, y
+   Railway redespliega con la personalidad nueva.
+3. **Su conocimiento**: sube tus documentos (`.md` o `.txt`) a la carpeta
+   `conocimiento/` — catálogo, horarios, preguntas frecuentes — y enciende la
+   libreta con `FEATURE_RAG=on`. Los tres archivos de ejemplo describen un
+   negocio inventado para que pruebes antes de subir los tuyos.
+
+Tu cinturón de seguridad viene puesto: `DAILY_MESSAGE_LIMIT` (200 respuestas
+por día de fábrica) frena el gasto si algo se descontrola.

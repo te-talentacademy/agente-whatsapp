@@ -33,6 +33,7 @@ class Job:
     message_ids: list[int]
     texts: list[str]
     kinds: list[str]
+    reply: str | None = None  # respuesta ya pensada en un intento anterior
 
 
 def enqueue(msg: InboundMessage) -> bool:
@@ -64,10 +65,11 @@ def enqueue(msg: InboundMessage) -> bool:
             first = row["first_pending_at"] if row["status"] == "pending" else now
             available = min(now + DEBOUNCE_SECONDS, first + DEBOUNCE_CEILING)
             if row["status"] in ("pending", "dead"):
-                # Un mensaje nuevo da otra oportunidad incluso a una ficha agotada.
+                # Un mensaje nuevo da otra oportunidad incluso a una ficha agotada,
+                # y cambia el turno: la respuesta pensada antes ya no sirve.
                 conn.execute(
                     "UPDATE jobs SET status='pending', attempts=0, available_at=?,"
-                    " first_pending_at=?, last_error=NULL WHERE sender=?",
+                    " first_pending_at=?, last_error=NULL, reply=NULL WHERE sender=?",
                     (available, first, msg.sender),
                 )
             # Si está 'claimed', el trabajador en curso ya contará los pendientes
@@ -90,7 +92,7 @@ def claim_ready_job() -> Job | None:
             (now, now - LEASE_SECONDS),
         )
         row = conn.execute(
-            "SELECT sender, attempts FROM jobs"
+            "SELECT sender, attempts, reply FROM jobs"
             " WHERE status='pending' AND available_at <= ?"
             " ORDER BY available_at LIMIT 1",
             (now,),
@@ -116,7 +118,19 @@ def claim_ready_job() -> Job | None:
             message_ids=[m["id"] for m in messages],
             texts=[m["body"] for m in messages if m["body"]],
             kinds=[m["kind"] for m in messages],
+            reply=row["reply"],
         )
+
+
+def save_reply(job: Job, text: str) -> None:
+    """Guarda la respuesta pensada ANTES de enviarla.
+
+    Si el envío falla y toca reintentar, se reutiliza tal cual: un turno se
+    piensa una sola vez (y se paga una sola vez).
+    """
+    job.reply = text
+    with db.transaction() as conn:
+        conn.execute("UPDATE jobs SET reply=? WHERE sender=?", (text, job.sender))
 
 
 def complete(job: Job) -> None:
@@ -139,9 +153,10 @@ def complete(job: Job) -> None:
             (job.sender,),
         ).fetchone()["n"]
         if remaining > 0:
+            # Turno nuevo: la respuesta guardada era del turno anterior.
             conn.execute(
                 "UPDATE jobs SET status='pending', attempts=0, available_at=?,"
-                " first_pending_at=?, claimed_at=NULL WHERE sender=?",
+                " first_pending_at=?, claimed_at=NULL, reply=NULL WHERE sender=?",
                 (now + DEBOUNCE_SECONDS, now, job.sender),
             )
         else:

@@ -89,6 +89,43 @@ def log_message_text() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# El cerebro (fase del curso: FEATURE_BRAIN) y la libreta (FEATURE_RAG)
+# ---------------------------------------------------------------------------
+# Un solo lugar para el modelo recomendado: si algún día cambia, se cambia
+# aquí o, sin tocar código, con la variable OPENROUTER_MODEL.
+
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
+DEFAULT_AGENT_NAME = "Mi agente"
+DEFAULT_DAILY_MESSAGE_LIMIT = 200
+PERSONALITY_FILE = "personalidad.md"
+KNOWLEDGE_DIR = "conocimiento"
+
+
+def brain_enabled() -> bool:
+    return flag("FEATURE_BRAIN")
+
+
+def rag_enabled() -> bool:
+    return flag("FEATURE_RAG")
+
+
+def openrouter_api_key() -> str:
+    return os.environ.get("OPENROUTER_API_KEY", "").strip()
+
+
+def openrouter_model() -> str:
+    return os.environ.get("OPENROUTER_MODEL", "").strip() or DEFAULT_MODEL
+
+
+def agent_name() -> str:
+    return os.environ.get("AGENT_NAME", "").strip() or DEFAULT_AGENT_NAME
+
+
+def daily_message_limit() -> int | None:
+    return limit("DAILY_MESSAGE_LIMIT", DEFAULT_DAILY_MESSAGE_LIMIT)
+
+
+# ---------------------------------------------------------------------------
 # Dónde vive la memoria del servicio (archivo de base de datos)
 # ---------------------------------------------------------------------------
 # En Railway, el disco normal se borra con cada despliegue. Para que los

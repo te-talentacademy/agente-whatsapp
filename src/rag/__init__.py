@@ -1,2 +1,4 @@
-# La libreta de conocimiento: tus documentos dentro del agente. Este órgano
-# despierta en su fase del curso con FEATURE_RAG=on — ver docs/variables.md.
+# La libreta de conocimiento: tus documentos dentro del agente. Despierta con
+# FEATURE_RAG=on. Lee los archivos .md y .txt de la carpeta `conocimiento/`
+# de tu copia, los trocea y, ante cada pregunta, subraya los fragmentos que
+# más se parecen a lo que preguntaron. Sin servicios extra ni llaves nuevas.

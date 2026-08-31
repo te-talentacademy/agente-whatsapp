@@ -29,6 +29,15 @@ async def lifespan(app: FastAPI):
     warning = config.storage_warning()
     if warning:
         logger.warning(warning)
+    if config.rag_enabled():
+        # La libreta se rearma en cada arranque desde conocimiento/: agregar un
+        # documento es subirlo a tu copia y dejar que Railway redespliegue.
+        from src.rag import index
+
+        try:
+            index.rebuild()
+        except Exception:
+            logger.exception("No pude armar la libreta; el agente sigue sin ella.")
     task = asyncio.create_task(worker.run_forever())
     logger.info("Agente listo. Esperando el primer mensaje.")
     try:
