@@ -169,6 +169,65 @@ def daily_voice_limit() -> int | None:
 
 
 # ---------------------------------------------------------------------------
+# Llamadas (fase del curso: FEATURE_CALLS / FEATURE_OUTBOUND_CALLS)
+# ---------------------------------------------------------------------------
+# Las llamadas son el ramal más caro (cada minuto gasta oídos, cerebro y voz),
+# así que llegan con cinturones propios: minutos por llamada, minutos por día
+# y una lista opcional de números permitidos.
+
+DEFAULT_CALL_MAX_MINUTES = 5
+DEFAULT_CALL_DAILY_MINUTES = 30
+TURN_TTL_MARGIN_SECONDS = 120   # la credencial debe vivir MÁS que la llamada
+DEFAULT_CALL_GREETING = "¡Hola! Soy {name}. ¿En qué te ayudo?"
+DEFAULT_CALL_GOODBYE = "¡Gracias por llamar! Hasta pronto."
+
+
+def calls_enabled() -> bool:
+    return flag("FEATURE_CALLS")
+
+
+def outbound_calls_enabled() -> bool:
+    return flag("FEATURE_OUTBOUND_CALLS")
+
+
+def turn_key_id() -> str:
+    return os.environ.get("CLOUDFLARE_TURN_KEY_ID", "").strip()
+
+
+def turn_api_token() -> str:
+    return os.environ.get("CLOUDFLARE_TURN_API_TOKEN", "").strip()
+
+
+def call_max_minutes() -> int:
+    # A diferencia de los cupos diarios, el tope por llamada nunca es "sin
+    # límite": un 0 aquí no apaga el cinturón, lo devuelve al recomendado.
+    value = limit("CALL_MAX_MINUTES", DEFAULT_CALL_MAX_MINUTES)
+    return value if value else DEFAULT_CALL_MAX_MINUTES
+
+
+def call_daily_minutes_limit() -> int | None:
+    return limit("CALL_DAILY_MINUTES_LIMIT", DEFAULT_CALL_DAILY_MINUTES)
+
+
+def call_allowed_numbers() -> set[str]:
+    """Lista opcional de números que pueden llamar (vacía = cualquiera)."""
+    raw = os.environ.get("CALL_ALLOWED_NUMBERS", "").strip()
+    if not raw:
+        return set()
+    return {part.strip().lstrip("+") for part in raw.split(",") if part.strip()}
+
+
+def call_greeting_text() -> str:
+    custom = os.environ.get("CALL_GREETING_TEXT", "").strip()
+    return custom or DEFAULT_CALL_GREETING.format(name=agent_name())
+
+
+def call_goodbye_text() -> str:
+    custom = os.environ.get("CALL_GOODBYE_TEXT", "").strip()
+    return custom or DEFAULT_CALL_GOODBYE
+
+
+# ---------------------------------------------------------------------------
 # Dónde vive la memoria del servicio (archivo de base de datos)
 # ---------------------------------------------------------------------------
 # En Railway, el disco normal se borra con cada despliegue. Para que los
