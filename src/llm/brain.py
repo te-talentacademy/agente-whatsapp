@@ -90,8 +90,13 @@ def _single_message(text: str) -> str:
     return cut + "\n(… sigo si me preguntas)"
 
 
-def think(sender: str, user_text: str) -> Thought:
-    """Piensa la respuesta para `user_text`. Nunca lanza errores hacia arriba."""
+def think(sender: str, user_text: str, image_parts: list | None = None) -> Thought:
+    """Piensa la respuesta para `user_text`. Nunca lanza errores hacia arriba.
+
+    Con fotos adjuntas (`image_parts`), el turno viaja al segundo motor (el
+    modelo con visión); sin fotos, al motor de texto. Ese es todo el router:
+    una regla, sin ambigüedad.
+    """
     api_key = config.openrouter_api_key()
     if not api_key:
         return Thought(reason="falta OPENROUTER_API_KEY")
@@ -104,19 +109,29 @@ def think(sender: str, user_text: str) -> Thought:
 
     messages = [{"role": "system", "content": prompt.build_system_prompt(notes)}]
     messages.extend(_history(sender))
-    messages.append({"role": "user", "content": user_text})
+    if image_parts:
+        content = [{"type": "text", "text": user_text or "¿Qué ves en la imagen?"}]
+        content.extend(image_parts)
+        messages.append({"role": "user", "content": content})
+        model = config.openrouter_vision_model()
+    else:
+        messages.append({"role": "user", "content": user_text})
+        model = config.openrouter_model()
 
     if not _reserve():
         logger.warning("Tope diario de solicitudes alcanzado (DAILY_MESSAGE_LIMIT); respondo el aviso fijo.")
         return Thought(text=LIMIT_REACHED_TEXT)
 
-    result = client.complete(messages, config.openrouter_model(), api_key, title=config.agent_name())
+    result = client.complete(messages, model, api_key, title=config.agent_name())
     if not result.ok:
         if result.refundable:
             _release()
         return Thought(retryable=result.retryable, reason=result.reason)
 
     text = _single_message(result.text)
-    _remember(sender, "user", user_text)
+    remembered = user_text if user_text else "(envió una imagen)"
+    if image_parts and user_text:
+        remembered = f"{user_text} (con imagen adjunta)"
+    _remember(sender, "user", remembered)
     _remember(sender, "assistant", text)
     return Thought(text=text)

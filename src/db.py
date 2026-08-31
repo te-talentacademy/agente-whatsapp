@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS messages (
     kind TEXT NOT NULL,
     body TEXT NOT NULL DEFAULT '',
     received_at REAL NOT NULL,
-    processed_at REAL
+    processed_at REAL,
+    media_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_pending
     ON messages (sender) WHERE processed_at IS NULL;
@@ -53,7 +54,8 @@ CREATE INDEX IF NOT EXISTS idx_conversation_sender ON conversation (sender, id);
 -- Contador diario de respuestas con cerebro: el cinturón de seguridad de gasto.
 CREATE TABLE IF NOT EXISTS usage (
     day TEXT PRIMARY KEY,
-    replies INTEGER NOT NULL DEFAULT 0
+    replies INTEGER NOT NULL DEFAULT 0,
+    voice INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -80,6 +82,8 @@ def connect() -> sqlite3.Connection:
 _ADDED_COLUMNS = [
     ("jobs", "reply", "TEXT"),
     ("jobs", "reply_upto", "INTEGER"),
+    ("messages", "media_id", "TEXT"),
+    ("usage", "voice", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

@@ -110,6 +110,26 @@ está en la línea de al lado:
    palabras, así que «¿a qué hora abren?» encuentra «horario» si tu documento
    dice «horario de atención» y «abrimos».
 
+## Si los oídos, los ojos o la voz no funcionan
+
+- Los tres ramales necesitan `FEATURE_BRAIN=on` y la llave de OpenRouter; los
+  oídos y la voz necesitan además `CARTESIA_API_KEY` (y la voz,
+  `CARTESIA_VOICE_ID`). Cada falta se anuncia en los registros con su nombre.
+- `NOTA DE VOZ transcrita de …` → los oídos funcionan; ese texto entra al
+  turno como si la persona lo hubiera escrito.
+- `Nota de voz enviada a …` → la voz salió. Si en su lugar ves `La voz fallo
+  (…)` o `Voz omitida: …`, ahí está el motivo (llave, tope diario, respuesta
+  demasiado larga, turno viejo): el texto ya se entregó igual.
+- `Tope diario de voz alcanzado (DAILY_VOICE_LIMIT)` → tu cinturón de gasto
+  de Cartesia actuó; súbelo si te quedó corto.
+- Las fotos solo se miran con `FEATURE_VISION=on` y siempre viajan al modelo
+  con visión (`OPENROUTER_VISION_MODEL`); si pusiste ahí un modelo sin
+  visión, el rechazo aparece en los registros con el nombre de la variable.
+- El audio de las notas de voz va a Cartesia (tu cuenta) para transcribirse,
+  y el texto de las respuestas va a Cartesia para locutarse; las fotos van al
+  modelo con visión con la misma política de privacidad del cerebro. Con los
+  ramales apagados, nada de esto sale de tu servicio.
+
 ## Fichas agotadas
 
 Si un mensaje falló cinco veces seguidas, su ficha queda marcada como agotada

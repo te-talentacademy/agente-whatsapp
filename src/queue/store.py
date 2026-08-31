@@ -35,6 +35,8 @@ class Job:
     kinds: list[str]
     reply: str | None = None  # respuesta ya pensada en un intento anterior
     reply_upto: int | None = None  # último mensaje (id) que esa respuesta cubre
+    attachments: list = None  # [(kind, media_id)] de los adjuntos del turno
+    oldest_at: float = 0.0    # cuándo llegó el mensaje más viejo del turno
 
 
 def enqueue(msg: InboundMessage) -> bool:
@@ -123,7 +125,7 @@ def claim_ready_job() -> Job | None:
         # espera su propio turno: jamás se cierra con una respuesta ajena.
         reply_upto = row["reply_upto"] if row["reply"] else None
         messages = conn.execute(
-            "SELECT id, kind, body FROM messages"
+            "SELECT id, kind, body, media_id, received_at FROM messages"
             " WHERE sender=? AND processed_at IS NULL AND (? IS NULL OR id <= ?)"
             " ORDER BY received_at, id LIMIT 10",
             (sender, reply_upto, reply_upto),
@@ -136,6 +138,8 @@ def claim_ready_job() -> Job | None:
             kinds=[m["kind"] for m in messages],
             reply=row["reply"] if messages else None,
             reply_upto=reply_upto,
+            attachments=[(m["kind"], m["media_id"]) for m in messages if m["media_id"]],
+            oldest_at=messages[0]["received_at"] if messages else 0.0,
         )
 
 

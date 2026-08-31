@@ -126,3 +126,20 @@ archivo:
 
 Tu cinturón de seguridad viene puesto: `DAILY_MESSAGE_LIMIT` (200 respuestas
 por día de fábrica) frena el gasto si algo se descontrola.
+
+## Enciende los oídos, los ojos y la voz
+
+Con el cerebro ya andando, tres variables despiertan los sentidos:
+
+1. **Los oídos** (`FEATURE_VOICE_IN=on` + tu `CARTESIA_API_KEY`): las notas
+   de voz que te manden se transcriben y entran a la conversación como texto.
+2. **Los ojos** (`FEATURE_VISION=on`): las fotos van al segundo motor — un
+   modelo que sí ve — y solo cuando hay foto; sin foto no se gasta ni un
+   centavo de visión.
+3. **Tu voz** (`FEATURE_VOICE_OUT=on` + `CARTESIA_VOICE_ID`): clona tu voz en
+   el panel de Cartesia (un minuto) y tu agente responderá, además del texto,
+   con una nota de voz que suena a TI. Si la voz falla, no pasa nada: el
+   texto siempre sale primero.
+
+El cinturón de la voz es `DAILY_VOICE_LIMIT` (100 solicitudes diarias de
+fábrica, oídos y voz juntos).

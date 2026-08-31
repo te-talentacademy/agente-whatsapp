@@ -19,6 +19,7 @@ class InboundMessage:
     kind: str  # text | audio | image | video | document | sticker | other
     body: str
     timestamp: str
+    media_id: str = ""  # identificador del adjunto en Meta (caduca en minutos)
 
 
 def _as_dict(value: Any) -> dict:
@@ -58,12 +59,16 @@ def extract_messages(payload: Any, own_phone_number_id: str) -> list[InboundMess
                 if not isinstance(kind, str) or not kind:
                     kind = "other"
                 body = ""
+                media_id = ""
                 if kind == "text":
                     body_value = _as_dict(msg.get("text")).get("body")
                     body = body_value if isinstance(body_value, str) else ""
                 else:
-                    caption = _as_dict(msg.get(kind)).get("caption")
+                    attachment = _as_dict(msg.get(kind))
+                    caption = attachment.get("caption")
                     body = caption if isinstance(caption, str) else ""
+                    mid = attachment.get("id")
+                    media_id = mid if isinstance(mid, str) else ""
                 timestamp = msg.get("timestamp")
                 result.append(
                     InboundMessage(
@@ -72,6 +77,7 @@ def extract_messages(payload: Any, own_phone_number_id: str) -> list[InboundMess
                         kind=kind,
                         body=body,
                         timestamp=timestamp if isinstance(timestamp, str) else "",
+                        media_id=media_id,
                     )
                 )
     return result

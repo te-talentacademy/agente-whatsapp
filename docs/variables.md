@@ -87,14 +87,30 @@ Si arrancas sin volumen, funciona igual, pero te lo recuerda en los registros.
 
 ## Oídos, ojos y voz (se encienden en su fase)
 
+Los tres ramales necesitan el cerebro encendido (`FEATURE_BRAIN=on`): lo que
+se oye y lo que se ve entra al mismo turno que el texto.
+
 | Variable | Qué hace | Valor de fábrica |
 |---|---|---|
-| `FEATURE_VOICE_IN` | Los oídos: entender las notas de voz que te mandan. | `off` |
-| `FEATURE_VOICE_OUT` | La voz: responder con notas de voz con TU voz clonada. Si la voz falla, sale texto: la conversación nunca se corta. | `off` |
-| `FEATURE_VISION` | Los ojos: entender fotos. Solo trabaja cuando hay una imagen adjunta — jamás gasta de más. | `off` |
+| `FEATURE_VOICE_IN` | Los oídos: las notas de voz se transcriben y entran como texto de la persona — heredan los mismos blindajes que el texto. Tope: 2 notas por turno, 8 MB por nota. | `off` |
+| `FEATURE_VOICE_OUT` | La voz: además del texto (que SIEMPRE sale primero), la respuesta llega como nota de voz con TU voz clonada. Si la voz falla o tarda, no pasa nada: el texto ya está entregado. Respuestas muy largas o turnos viejos (más de 10 minutos) van solo en texto. | `off` |
+| `FEATURE_VISION` | Los ojos: entender fotos. Solo trabaja cuando hay una imagen adjunta — sin foto no se invoca ni gasta. Tope: 3 fotos por turno, 5 MB por foto. | `off` |
 | `CARTESIA_API_KEY` | Tu llave de Cartesia (oídos y voz usan la misma cuenta). | — |
-| `CARTESIA_VOICE_ID` | El identificador de tu voz clonada en Cartesia. | — |
-| `OPENROUTER_VISION_MODEL` | El segundo motor: el modelo que mira las fotos. Ya trae uno elegido. | el recomendado |
+| `CARTESIA_VOICE_ID` | El identificador de tu voz clonada en Cartesia (se crea en su panel en un minuto). | — |
+| `OPENROUTER_VISION_MODEL` | El segundo motor: el modelo que mira las fotos. Ya trae uno elegido, rápido y barato (`qwen/qwen3.8-flash`). Si lo cambias, elige uno que acepte imágenes. | el recomendado |
+| `DAILY_VOICE_LIMIT` | Tope diario de solicitudes de voz (oídos + voz juntos): tu cinturón de gasto en Cartesia. Misma regla de reserva que el cerebro. Vacía = 100. `0` = sin límite. | 100 |
+
+> **La nota de voz de verdad**: WhatsApp solo muestra la burbuja de nota de
+> voz con audio OGG/Opus. La plantilla trae `ffmpeg` en su despliegue y hace
+> la conversión sola; si faltara, el audio sale como archivo MP3 reproducible
+> (mismo contenido, otra apariencia).
+
+> **Privacidad de la voz y los ojos**: con los oídos encendidos, el audio de
+> cada nota de voz viaja a Cartesia (TU cuenta, bajo sus términos) para
+> transcribirse; con la voz encendida, el texto de la respuesta viaja a
+> Cartesia para locutarse. Las fotos viajan al modelo con visión por la misma
+> vía y con la misma política `data_collection: deny` que el resto del
+> cerebro. Nada de esto ocurre con los ramales apagados.
 
 ## El teléfono (se enciende en su fase)
 

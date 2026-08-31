@@ -1,3 +1,5 @@
-# Los oídos y la voz: entender notas de voz y responder con la tuya. Este
-# órgano despierta en su fase del curso con FEATURE_VOICE_IN / FEATURE_VOICE_OUT
-# y tu cuenta de Cartesia — ver docs/variables.md.
+# Los oídos y la voz. Piezas:
+#   cartesia.py -> conexión con Cartesia (oídos: audio->texto; voz: texto->audio)
+#   quota.py    -> cupo diario de voz (se aparta antes de cada solicitud)
+#   notes.py    -> la nota de voz saliente: caducidad, conversión y envío best-effort
+# Se encienden con FEATURE_VOICE_IN / FEATURE_VOICE_OUT y tu cuenta de Cartesia.

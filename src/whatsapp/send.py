@@ -64,3 +64,51 @@ def send_text(to: str, text: str) -> SendResult:
     # Resto de errores 4xx: la petición no es válida; reintentar no lo arregla.
     detail = response.text[:200]
     return SendResult(ok=False, retryable=False, reason=f"rechazado ({response.status_code}): {detail}")
+
+
+def upload_media(data: bytes, mime: str, filename: str) -> str | None:
+    """Sube un archivo (p. ej. una nota de voz) y devuelve su identificador."""
+    token = config.whatsapp_token()
+    number_id = config.phone_number_id()
+    if not token or not number_id:
+        return None
+    try:
+        response = httpx.post(
+            f"{GRAPH_BASE}/{number_id}/media",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"file": (filename, data, mime)},
+            data={"messaging_product": "whatsapp", "type": mime},
+            timeout=30.0,
+        )
+        if response.status_code < 300:
+            media_id = response.json().get("id")
+            return media_id if isinstance(media_id, str) else None
+    except (httpx.HTTPError, ValueError):
+        pass
+    return None
+
+
+def send_audio(to: str, media_id: str) -> SendResult:
+    """Envía un audio ya subido (con OGG/Opus se ve como nota de voz)."""
+    token = config.whatsapp_token()
+    number_id = config.phone_number_id()
+    if not token or not number_id:
+        return SendResult(ok=False, retryable=False, reason="faltan credenciales")
+    try:
+        response = httpx.post(
+            f"{GRAPH_BASE}/{number_id}/messages",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "audio",
+                "audio": {"id": media_id},
+            },
+            timeout=TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as exc:
+        return SendResult(ok=False, retryable=True, reason=f"red: {exc.__class__.__name__}")
+    if response.status_code < 300:
+        return SendResult(ok=True)
+    return SendResult(ok=False, retryable=False, reason=f"audio rechazado ({response.status_code}): {response.text[:150]}")

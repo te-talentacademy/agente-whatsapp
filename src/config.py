@@ -126,6 +126,49 @@ def daily_message_limit() -> int | None:
 
 
 # ---------------------------------------------------------------------------
+# Oídos, ojos y voz (fase del curso: FEATURE_VOICE_IN / FEATURE_VISION /
+# FEATURE_VOICE_OUT)
+# ---------------------------------------------------------------------------
+
+DEFAULT_VISION_MODEL = "qwen/qwen3.8-flash"  # segundo motor: solo despierta con adjuntos
+DEFAULT_DAILY_VOICE_LIMIT = 100              # solicitudes de voz (oídos + voz) por día
+AUDIO_NOTES_PER_TURN = 2
+IMAGES_PER_TURN = 3
+MAX_AUDIO_BYTES = 8 * 1024 * 1024
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+VOICE_MAX_AGE_SECONDS = 600.0   # un audio viejo no se envía tarde
+VOICE_MAX_CHARS = 800           # respuestas muy largas van solo en texto
+
+
+def voice_in_enabled() -> bool:
+    return flag("FEATURE_VOICE_IN")
+
+
+def voice_out_enabled() -> bool:
+    return flag("FEATURE_VOICE_OUT")
+
+
+def vision_enabled() -> bool:
+    return flag("FEATURE_VISION")
+
+
+def cartesia_api_key() -> str:
+    return os.environ.get("CARTESIA_API_KEY", "").strip()
+
+
+def cartesia_voice_id() -> str:
+    return os.environ.get("CARTESIA_VOICE_ID", "").strip()
+
+
+def openrouter_vision_model() -> str:
+    return os.environ.get("OPENROUTER_VISION_MODEL", "").strip() or DEFAULT_VISION_MODEL
+
+
+def daily_voice_limit() -> int | None:
+    return limit("DAILY_VOICE_LIMIT", DEFAULT_DAILY_VOICE_LIMIT)
+
+
+# ---------------------------------------------------------------------------
 # Dónde vive la memoria del servicio (archivo de base de datos)
 # ---------------------------------------------------------------------------
 # En Railway, el disco normal se borra con cada despliegue. Para que los
