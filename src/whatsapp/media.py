@@ -11,6 +11,7 @@ None: un adjunto imposible de bajar jamás tumba el turno.
 """
 
 import logging
+from dataclasses import dataclass
 
 import httpx
 
@@ -20,6 +21,15 @@ from src.whatsapp.send import GRAPH_BASE
 logger = logging.getLogger("agente")
 
 TIMEOUT_SECONDS = 20.0
+
+
+@dataclass
+class MediaResult:
+    ok: bool
+    data: bytes = b""
+    mime: str = ""
+    retryable: bool = False  # fallo pasajero: el turno debe esperar y reintentar
+    reason: str = ""
 
 # Firmas de los primeros bytes (magia) de los formatos que aceptamos.
 AUDIO_MAGIC = [
@@ -32,7 +42,6 @@ AUDIO_MAGIC = [
 IMAGE_MAGIC = [
     (b"\xff\xd8\xff", "image/jpeg"),
     (b"\x89PNG", "image/png"),
-    (b"RIFF", "image/webp"),
 ]
 
 
@@ -43,39 +52,47 @@ def _sniff(data: bytes, table: list) -> str | None:
     # mp4/m4a: la firma va en el byte 4
     if table is AUDIO_MAGIC and data[4:8] == b"ftyp":
         return "audio/mp4"
+    # webp: RIFF a secas tambien es WAV/AVI; hay que ver la marca WEBP
+    if table is IMAGE_MAGIC and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
     return None
 
 
-def download(media_id: str, kind: str) -> tuple[bytes, str] | None:
-    """Baja un adjunto. Devuelve (bytes, tipo_real) o None."""
+def _status_result(status: int, where: str) -> MediaResult:
+    # 404/410: el identificador caducó o no existe — reintentar no lo revive.
+    # El resto (credencial, saturación, 5xx) es pasajero o arreglable: esperar.
+    if status in (404, 410):
+        return MediaResult(ok=False, reason=f"{where}: el adjunto ya no esta disponible ({status})")
+    return MediaResult(ok=False, retryable=True, reason=f"{where}: respuesta {status}")
+
+
+def download(media_id: str, kind: str) -> MediaResult:
+    """Baja un adjunto, distinguiendo el fallo pasajero del descarte definitivo."""
     token = config.whatsapp_token()
     if not token or not media_id:
-        return None
+        return MediaResult(ok=False, reason="sin credenciales o sin identificador")
     cap = config.MAX_AUDIO_BYTES if kind == "audio" else config.MAX_IMAGE_BYTES
     headers = {"Authorization": f"Bearer {token}"}
     try:
         meta = httpx.get(f"{GRAPH_BASE}/{media_id}", headers=headers, timeout=TIMEOUT_SECONDS)
         if meta.status_code >= 300:
-            logger.warning("Adjunto %s: Meta respondio %s al pedir la direccion.", media_id[-8:], meta.status_code)
-            return None
+            return _status_result(meta.status_code, "direccion")
         url = meta.json().get("url")
         if not isinstance(url, str) or not url:
-            return None
+            return MediaResult(ok=False, reason="Meta no entrego la direccion del adjunto")
         data = b""
         with httpx.stream("GET", url, headers=headers, timeout=TIMEOUT_SECONDS) as response:
             if response.status_code >= 300:
-                logger.warning("Adjunto %s: la descarga respondio %s.", media_id[-8:], response.status_code)
-                return None
+                return _status_result(response.status_code, "descarga")
             for chunk in response.iter_bytes():
                 data += chunk
                 if len(data) > cap:
-                    logger.warning("Adjunto %s: excede el tope de tamano; se ignora.", media_id[-8:])
-                    return None
-    except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("Adjunto %s: fallo la descarga (%s).", media_id[-8:], exc.__class__.__name__)
-        return None
+                    return MediaResult(ok=False, reason="excede el tope de tamano")
+    except httpx.HTTPError as exc:
+        return MediaResult(ok=False, retryable=True, reason=f"red: {exc.__class__.__name__}")
+    except ValueError:
+        return MediaResult(ok=False, reason="respuesta de Meta con forma inesperada")
     mime = _sniff(data, AUDIO_MAGIC if kind == "audio" else IMAGE_MAGIC)
     if mime is None:
-        logger.warning("Adjunto %s: el contenido no es del tipo esperado; se ignora.", media_id[-8:])
-        return None
-    return data, mime
+        return MediaResult(ok=False, reason="el contenido no es del tipo esperado")
+    return MediaResult(ok=True, data=data, mime=mime)

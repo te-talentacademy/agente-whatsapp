@@ -15,8 +15,13 @@ from src.whatsapp import media
 logger = logging.getLogger("agente")
 
 
-def build_image_parts(attachments: list) -> list[dict]:
-    """Descarga las fotos del turno (con tope) y las prepara para el modelo."""
+def build_image_parts(attachments: list) -> tuple[list[dict], str | None]:
+    """Descarga las fotos del turno (con tope) y las prepara para el modelo.
+
+    Devuelve (partes, motivo_de_espera). Un fallo PASAJERO de descarga no
+    descarta la foto: pospone el turno para reintentarlo con pausa; solo los
+    descartes definitivos (caducado, tipo falso, tamaño) se ignoran con log.
+    """
     parts: list[dict] = []
     for kind, media_id in attachments:
         if kind != "image":
@@ -25,11 +30,13 @@ def build_image_parts(attachments: list) -> list[dict]:
             logger.info("Mas fotos de las que atiendo por turno; ignoro las demas.")
             break
         result = media.download(media_id, "image")
-        if result is None:
+        if result.retryable:
+            return [], f"foto: {result.reason}"
+        if not result.ok:
+            logger.warning("Foto descartada (%s).", result.reason)
             continue
-        data, mime = result
         parts.append({
             "type": "image_url",
-            "image_url": {"url": f"data:{mime};base64,{base64.b64encode(data).decode()}"},
+            "image_url": {"url": f"data:{result.mime};base64,{base64.b64encode(result.data).decode()}"},
         })
-    return parts
+    return parts, None

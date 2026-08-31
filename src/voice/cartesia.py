@@ -19,7 +19,7 @@ from src import config
 logger = logging.getLogger("agente")
 
 BASE = "https://api.cartesia.ai"
-VERSION = "2025-04-16"
+VERSION = "2026-08-14"  # verificada en vivo contra /stt y /tts/bytes
 TTS_MODEL = "sonic-3.6"
 STT_MODEL = "ink-whisper"      # verificado en vivo contra el endpoint por lotes
 STT_FALLBACK_MODEL = "ink-2"   # plan B si algún día el primario se retira
@@ -31,7 +31,8 @@ class VoiceResult:
     ok: bool
     data: bytes = b""
     text: str = ""
-    refundable: bool = False
+    retryable: bool = False   # fallo pasajero (red, 5xx): vale esperar y reintentar
+    refundable: bool = False  # rechazo del proveedor sin procesar: devuelve el cupo
     reason: str = ""
 
 
@@ -47,9 +48,11 @@ def _classify(status: int, body: str) -> VoiceResult:
         return VoiceResult(ok=False, refundable=True, reason="llave de Cartesia rechazada: revisa CARTESIA_API_KEY")
     if status == 402:
         return VoiceResult(ok=False, refundable=True, reason="sin saldo en Cartesia")
+    if status == 429:
+        return VoiceResult(ok=False, retryable=True, refundable=True, reason="Cartesia saturada (429)")
     if 400 <= status < 500:
         return VoiceResult(ok=False, refundable=True, reason=f"rechazado por Cartesia ({status}): {body[:150]}")
-    return VoiceResult(ok=False, reason=f"Cartesia con problemas ({status})")
+    return VoiceResult(ok=False, retryable=True, reason=f"Cartesia con problemas ({status})")
 
 
 def transcribe(data: bytes, mime: str) -> VoiceResult:
@@ -64,7 +67,7 @@ def transcribe(data: bytes, mime: str) -> VoiceResult:
                 timeout=TIMEOUT_SECONDS,
             )
         except httpx.HTTPError as exc:
-            return VoiceResult(ok=False, reason=f"red: {exc.__class__.__name__}")
+            return VoiceResult(ok=False, retryable=True, reason=f"red: {exc.__class__.__name__}")
         if response.status_code < 300:
             try:
                 text = response.json().get("text", "")

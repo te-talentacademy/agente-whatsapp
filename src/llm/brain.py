@@ -55,6 +55,20 @@ def _reserve() -> bool:
     return True
 
 
+def quota_available() -> bool:
+    """Mira (sin consumir) si queda cupo del cerebro hoy.
+
+    Los sentidos lo consultan ANTES de gastar en Cartesia o en descargas: un
+    turno que va a morir en el aviso de tope no debe oír ni ver.
+    """
+    limit = config.daily_message_limit()
+    if limit is None:
+        return True
+    with db.transaction() as conn:
+        row = conn.execute("SELECT replies FROM usage WHERE day = ?", (_today(),)).fetchone()
+    return (row["replies"] if row else 0) < limit
+
+
 def _release() -> None:
     """Devuelve una solicitud apartada: solo cuando el proveedor la RECHAZÓ."""
     with db.transaction() as conn:

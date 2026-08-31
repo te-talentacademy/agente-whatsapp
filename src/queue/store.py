@@ -48,9 +48,9 @@ def enqueue(msg: InboundMessage) -> bool:
     now = time.time()
     with db.transaction() as conn:
         cur = conn.execute(
-            "INSERT OR IGNORE INTO messages (wamid, sender, kind, body, received_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (msg.wamid, msg.sender, msg.kind, msg.body, now),
+            "INSERT OR IGNORE INTO messages (wamid, sender, kind, body, received_at, media_id)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (msg.wamid, msg.sender, msg.kind, msg.body, now, msg.media_id or None),
         )
         if cur.rowcount == 0:
             return False
