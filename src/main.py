@@ -54,15 +54,17 @@ async def lifespan(app: FastAPI):
     finally:
         task.cancel()
         if rebuild_task is not None:
-            # Apagado cooperativo: la señal corta el rearme entre archivos y
-            # páginas (un hilo no se interrumpe por la fuerza) y se espera a
-            # que termine limpio antes de cerrar.
+            # Apagado cooperativo: la señal corta el rearme entre solicitudes
+            # y páginas (un hilo no se interrumpe por la fuerza) y aquí se
+            # espera a que el hilo TERMINE de verdad — cancelar la tarea no
+            # detendría el hilo de fondo, solo abandonaría la espera.
             from src.rag import index
 
             index.STOP_EVENT.set()
-            rebuild_task.cancel()
             try:
-                await rebuild_task
+                await asyncio.wait_for(rebuild_task, timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.warning("El rearme de la libreta no terminó a tiempo durante el apagado.")
             except asyncio.CancelledError:
                 pass
 

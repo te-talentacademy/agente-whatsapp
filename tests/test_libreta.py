@@ -82,6 +82,33 @@ def make_scanned_pdf(pages: int = 1, mediabox: str = "0 0 612 792") -> bytes:
     return _build_pdf(objects)
 
 
+def make_mixed_pdf(text: str) -> bytes:
+    """Página 1 con texto + página 2 escaneada (solo imagen)."""
+    stream_text = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode("latin-1")
+    pixels = bytes([200, 30, 30] * 16)
+    stream_img = b"q 200 0 0 100 50 600 cm /Im1 Do Q"
+    return _build_pdf([
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>",
+        (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>"
+        ),
+        (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /XObject << /Im1 7 0 R >> >> /Contents 8 0 R >>"
+        ),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream_text)).encode() + b" >>\nstream\n" + stream_text + b"\nendstream",
+        (
+            b"<< /Type /XObject /Subtype /Image /Width 4 /Height 4 /ColorSpace /DeviceRGB"
+            b" /BitsPerComponent 8 /Length " + str(len(pixels)).encode() + b" >>\nstream\n"
+            + pixels + b"\nendstream"
+        ),
+        b"<< /Length " + str(len(stream_img)).encode() + b" >>\nstream\n" + stream_img + b"\nendstream",
+    ])
+
+
 def make_docx(path, paragraphs: list[str], table: list[list[str]] | None = None) -> None:
     import docx
 
@@ -308,6 +335,23 @@ def test_tope_por_documento_publica_lo_leido(knowledge_dir, monkeypatch):
     assert vision.calls == 1
 
 
+def test_tope_por_documento_estable_entre_rearmes(knowledge_dir, monkeypatch):
+    """El acierto de memoria también avanza el ordinal: la página 2 jamás se
+    cuela en un despliegue posterior porque la página 1 ya esté pagada."""
+    vision = FakeVision(monkeypatch)
+    monkeypatch.setattr(extract, "SCANNED_PAGES_PER_DOC", 1)
+    (knowledge_dir / "menu.pdf").write_bytes(make_scanned_pdf(pages=2))
+    first = extract.RebuildStats()
+    r1 = extract.extract(str(knowledge_dir / "menu.pdf"), first, None)
+    assert r1.ok and r1.skipped_pages == 1 and vision.calls == 1
+    second = extract.RebuildStats()
+    r2 = extract.extract(str(knowledge_dir / "menu.pdf"), second, None)
+    assert r2.ok and r2.skipped_pages == 1
+    assert vision.calls == 1          # histórico total: sigue siendo UNA llamada
+    assert second.cache_hits == 1     # la página 1 vino de la memoria
+    assert second.http_calls == 0
+
+
 def test_techo_global_cuenta_reintentos(knowledge_dir, monkeypatch):
     vision = FakeVision(
         monkeypatch, result=LlmResult(ok=False, retryable=True, reason="saturado")
@@ -337,10 +381,13 @@ def test_mediabox_absurdo_se_salta_sin_dibujar(knowledge_dir, monkeypatch):
     (knowledge_dir / "raro.pdf").write_bytes(make_scanned_pdf(mediabox="0 0 200000 200000"))
     stats = extract.RebuildStats()
     result = extract.extract(str(knowledge_dir / "raro.pdf"), stats, None)
-    # La página con medidas fuera de rango se salta ANTES de crear la imagen
-    # y sin gastar una sola llamada de visión.
-    assert result.ok is False or result.skipped_pages == 1
+    # La única página tiene medidas fuera de rango: se salta ANTES de crear la
+    # imagen, sin una sola llamada de visión, y el documento (que queda sin
+    # texto) termina en ok=False con motivo claro.
+    assert result.ok is False
+    assert "legible" in result.reason
     assert vision.calls == 0
+    assert stats.http_calls == 0
 
 
 def test_presupuesto_de_pixeles_reduce_la_escala(knowledge_dir, monkeypatch):
@@ -379,6 +426,32 @@ def test_archivo_demasiado_pesado_se_salta(knowledge_dir, monkeypatch):
     assert not result.ok and "MB" in result.reason
 
 
+def test_presupuesto_de_texto_corta_durante_la_extraccion(knowledge_dir, monkeypatch):
+    """El corte es INCREMENTAL: al rebasar, ni se sigue construyendo el texto
+    ni se visitan las páginas posteriores (la escaneada jamás llega a visión)."""
+    vision = FakeVision(monkeypatch)
+    monkeypatch.setattr(extract, "MAX_TEXT_CHARS", 10)
+    (knowledge_dir / "mixto.pdf").write_bytes(
+        make_mixed_pdf("Los croissants cuestan 30 pesos cada uno")
+    )
+    stats = extract.RebuildStats()
+    result = extract.extract(str(knowledge_dir / "mixto.pdf"), stats, None)
+    assert not result.ok and "grande" in result.reason
+    assert vision.calls == 0
+    assert stats.http_calls == 0
+
+
+def test_presupuesto_de_texto_en_excel(knowledge_dir, monkeypatch):
+    monkeypatch.setattr(extract, "MAX_TEXT_CHARS", 20)
+    make_xlsx(
+        knowledge_dir / "grande.xlsx",
+        {"Datos": [["fila con texto bastante largo"] for _ in range(10)]},
+    )
+    stats = extract.RebuildStats()
+    result = extract.extract(str(knowledge_dir / "grande.xlsx"), stats)
+    assert not result.ok and "grande" in result.reason
+
+
 # ---------------------------------------------------------------------------
 # Concurrencia y apagado (contratos sellados en la revisión del plan)
 # ---------------------------------------------------------------------------
@@ -402,41 +475,69 @@ def test_ocr_lento_no_bloquea_al_timbre(knowledge_dir, monkeypatch):
 
 
 def test_apagado_cooperativo_corta_sin_empezar_otra_pagina(knowledge_dir, monkeypatch):
-    stop_after_first = threading.Event()
-
-    class SlowVision(FakeVision):
+    class SignalDuringCall(FakeVision):
         def _complete(self, *args, **kwargs):
             result = super()._complete(*args, **kwargs)
             index.STOP_EVENT.set()   # la señal llega mientras se lee la página 1
-            stop_after_first.set()
             return result
 
-    vision = SlowVision(monkeypatch)
+    vision = SignalDuringCall(monkeypatch)
     (knowledge_dir / "menu.pdf").write_bytes(make_scanned_pdf(pages=3))
     total = _rebuild()
-    assert stop_after_first.is_set()
-    # Tras la señal no empieza otra página (ni otra solicitud) y no se publica.
+    # Tras la señal no empieza otra página, ni otra solicitud, ni NINGUNA
+    # transacción de memoria (la página en curso tampoco se guarda), ni la
+    # publicación.
     assert vision.calls == 1
     assert total == 0
+    with db.transaction() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM ocr_cache").fetchone()["c"] == 0
     assert not _hits("tarta de fresa")
 
 
-def test_fallo_del_rearme_no_tumba_y_conserva_el_indice(knowledge_dir, monkeypatch):
+def test_apagado_durante_reintento_ni_gasta_ni_cachea(knowledge_dir, monkeypatch):
+    """La señal se consulta DENTRO del ciclo de reintentos y la pausa la
+    observa: exactamente una solicitud, cero memoria, cero publicación."""
+
+    class SignalOnFailure(FakeVision):
+        def _complete(self, *args, **kwargs):
+            result = super()._complete(*args, **kwargs)
+            index.STOP_EVENT.set()   # la señal llega mientras el intento 1 falla
+            return result
+
+    vision = SignalOnFailure(
+        monkeypatch, result=LlmResult(ok=False, retryable=True, reason="saturado")
+    )
+    monkeypatch.setattr(extract, "OCR_RETRY_PAUSE_SECONDS", 30.0)
+    (knowledge_dir / "menu.pdf").write_bytes(make_scanned_pdf())
+    started = time.monotonic()
+    total = _rebuild()
+    elapsed = time.monotonic() - started
+    assert vision.calls == 1   # el segundo intento jamás sale
+    assert total == 0          # nada se publica
+    with db.transaction() as conn:
+        assert conn.execute("SELECT COUNT(*) AS c FROM ocr_cache").fetchone()["c"] == 0
+    assert elapsed < 5.0       # la pausa de 30 s observó la señal y cortó al instante
+
+
+def test_lifespan_captura_el_fallo_del_rearme_y_conserva_el_indice(knowledge_dir, monkeypatch, caplog):
     (knowledge_dir / "sano.txt").write_text("Aceptamos pagos con tarjeta.")
     assert _rebuild() > 0
 
-    def boom(*args, **kwargs):
+    def boom():
         raise RuntimeError("fallo inesperado del extractor")
 
     monkeypatch.setattr(index, "rebuild", boom)
-    import asyncio
+    import logging
 
-    async def run():
-        try:
-            await asyncio.to_thread(index.rebuild)
-        except Exception:
-            return "capturada"
-        return "silencio"
+    from fastapi.testclient import TestClient
 
-    assert asyncio.run(run()) == "capturada"
+    from src.main import app
+
+    with caplog.at_level(logging.ERROR, logger="agente"):
+        with TestClient(app) as web:
+            deadline = time.monotonic() + 5.0
+            while "No pude armar la libreta" not in caplog.text and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert web.get("/").status_code == 200  # el servicio sigue de pie
+    assert "No pude armar la libreta" in caplog.text
     assert any("tarjeta" in h["chunk"] for h in _hits("pagos con tarjeta"))

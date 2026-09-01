@@ -87,6 +87,22 @@ class _BudgetExceeded(Exception):
     """El archivo se pasa de un presupuesto: se salta, jamás tumba nada."""
 
 
+class _TextBudget:
+    """Contador INCREMENTAL de caracteres extraídos.
+
+    Corta DURANTE la extracción, antes de aceptar el pedazo que rebasa: un
+    documento desmedido jamás llega a construirse completo en memoria.
+    """
+
+    def __init__(self) -> None:
+        self.total = 0
+
+    def add(self, piece: str) -> None:
+        self.total += len(piece)
+        if self.total > MAX_TEXT_CHARS:
+            raise _BudgetExceeded("el texto extraído es demasiado grande")
+
+
 @dataclass
 class ExtractResult:
     ok: bool
@@ -140,8 +156,6 @@ def extract(path: str, stats: RebuildStats, stop: threading.Event | None = None)
     except Exception as exc:  # dañado, ilegible, forma inesperada: da igual el porqué
         return ExtractResult(ok=False, reason=f"no pude leerlo ({exc.__class__.__name__})")
 
-    if result.ok and len(result.text) > MAX_TEXT_CHARS:
-        return ExtractResult(ok=False, reason="el texto extraído es demasiado grande")
     if result.ok and not result.text.strip():
         return ExtractResult(ok=False, reason="no encontré texto legible")
     return result
@@ -189,6 +203,22 @@ def _cache_put(doc_hash: str, page_no: int, text: str) -> None:
         )
 
 
+def _count_pending_scanned(pdf, doc_hash: str, first: int, total_pages: int) -> int:
+    """Cuenta EXACTO cuántas páginas escaneadas sin memoria quedan por leer.
+
+    Solo mira texto y memoria (barato); jamás dibuja ni llama a visión. Sirve
+    para que el registro del techo informe una cantidad real, no una muestra.
+    """
+    pending = 0
+    for page_no in range(first, total_pages):
+        page_text = (pdf[page_no].get_textpage().get_text_bounded() or "").strip()
+        if len(page_text) >= PDF_TEXT_MIN_CHARS:
+            continue
+        if _cache_get(doc_hash, page_no) is None:
+            pending += 1
+    return pending
+
+
 def _extract_pdf(path: str, name: str, stats: RebuildStats, stop: threading.Event | None) -> ExtractResult:
     import pypdfium2 as pdfium  # carga perezosa
 
@@ -199,8 +229,9 @@ def _extract_pdf(path: str, name: str, stats: RebuildStats, stop: threading.Even
         if total_pages > MAX_PDF_PAGES:
             return ExtractResult(ok=False, reason=f"{total_pages} páginas (leo hasta {MAX_PDF_PAGES})")
         paragraphs: list[str] = []
+        budget = _TextBudget()
         skipped = 0
-        sent_this_doc = 0
+        scanned_seen = 0  # ordinal ESTABLE de páginas escaneadas del documento
         used_vision = False
         for page_no in range(total_pages):
             if stop is not None and stop.is_set():
@@ -208,20 +239,26 @@ def _extract_pdf(path: str, name: str, stats: RebuildStats, stop: threading.Even
             page = pdf[page_no]
             page_text = (page.get_textpage().get_text_bounded() or "").strip()
             if len(page_text) >= PDF_TEXT_MIN_CHARS:
+                budget.add(page_text)
                 paragraphs.append(page_text)
                 continue
 
-            # Página escaneada. Primero la memoria (costo cero, con o sin visión).
+            # Página escaneada: el ordinal avanza SIEMPRE — también con acierto
+            # de memoria — para que el tope por documento sea estable entre
+            # despliegues (la página 21 jamás se cuela porque las primeras 20
+            # ya estén pagadas).
+            scanned_seen += 1
+            if scanned_seen > SCANNED_PAGES_PER_DOC:
+                # Tope por documento: previsible y avisado; el resto se publica.
+                skipped += 1
+                continue
             cached = _cache_get(doc_hash, page_no)
             if cached is not None:
                 stats.cache_hits += 1
                 if cached != OCR_EMPTY_MARK:
+                    budget.add(cached)
                     paragraphs.append(cached)
                 used_vision = True
-                continue
-            if sent_this_doc >= SCANNED_PAGES_PER_DOC:
-                # Tope por documento: previsible y avisado; el resto se publica.
-                skipped += 1
                 continue
             if not _vision_ready():
                 return ExtractResult(
@@ -229,7 +266,7 @@ def _extract_pdf(path: str, name: str, stats: RebuildStats, stop: threading.Even
                     reason="PDF escaneado: requiere el modelo de visión encendido para leerlo",
                 )
             if not stats.budget_left():
-                stats.pending_pages += 1
+                stats.pending_pages += _count_pending_scanned(pdf, doc_hash, page_no, total_pages)
                 return ExtractResult(
                     ok=False,
                     reason="techo de lecturas por visión de este rearme; sigo en el próximo",
@@ -240,19 +277,23 @@ def _extract_pdf(path: str, name: str, stats: RebuildStats, stop: threading.Even
                 logger.warning("Libreta: %s página %d con medidas fuera de rango; la salto.", name, page_no + 1)
                 skipped += 1
                 continue
-            sent_this_doc += 1
-            ocr_text, failure = _ocr_page(png, stats)
+            ocr_text, failure = _ocr_page(png, stats, stop)
             if failure:
                 if failure == "techo":
-                    stats.pending_pages += 1
+                    stats.pending_pages += _count_pending_scanned(pdf, doc_hash, page_no, total_pages)
                     return ExtractResult(
                         ok=False,
                         reason="techo de lecturas por visión de este rearme; sigo en el próximo",
                     )
                 return ExtractResult(ok=False, reason=f"página {page_no + 1}: {failure}")
+            if stop is not None and stop.is_set():
+                # Tras la señal de apagado no se abre NINGUNA transacción más
+                # (ni la de memoria): la página se releerá en el próximo arranque.
+                return ExtractResult(ok=False, reason="apagado del servicio")
             _cache_put(doc_hash, page_no, ocr_text or OCR_EMPTY_MARK)
             stats.vision_pages[name] = stats.vision_pages.get(name, 0) + 1
             if ocr_text:
+                budget.add(ocr_text)
                 paragraphs.append(ocr_text)
             used_vision = True
         return ExtractResult(
@@ -290,11 +331,14 @@ def _render_page_png(page) -> bytes | None:
     return None
 
 
-def _ocr_page(png: bytes, stats: RebuildStats) -> tuple[str, str]:
+def _ocr_page(png: bytes, stats: RebuildStats, stop: threading.Event | None = None) -> tuple[str, str]:
     """Manda UNA página al motor de visión. Devuelve (texto, fallo).
 
     Fallo vacío = lectura completa. Cada intento HTTP consume el techo del
-    rearme, reintentos incluidos — el techo cuenta solicitudes reales.
+    rearme, reintentos incluidos — el techo cuenta solicitudes reales. La
+    señal de apagado se consulta ANTES de cada intento (también entre
+    reintentos, y la pausa la observa): tras la señal no sale ni una
+    solicitud más.
     """
     from src.llm import client  # carga perezosa
 
@@ -311,6 +355,8 @@ def _ocr_page(png: bytes, stats: RebuildStats) -> tuple[str, str]:
     ]
     last_reason = ""
     for attempt in range(OCR_ATTEMPTS):
+        if stop is not None and stop.is_set():
+            return "", "apagado del servicio"
         if not stats.budget_left():
             return "", "techo"
         stats.http_calls += 1
@@ -329,7 +375,11 @@ def _ocr_page(png: bytes, stats: RebuildStats) -> tuple[str, str]:
             return ("" if text == OCR_EMPTY_MARK else text), ""
         last_reason = result.reason
         if result.retryable and attempt + 1 < OCR_ATTEMPTS:
-            time.sleep(OCR_RETRY_PAUSE_SECONDS)
+            if stop is not None:
+                if stop.wait(OCR_RETRY_PAUSE_SECONDS):
+                    return "", "apagado del servicio"
+            else:
+                time.sleep(OCR_RETRY_PAUSE_SECONDS)
             continue
         break
     return "", last_reason or "el motor de visión no respondió"
@@ -358,17 +408,21 @@ def _extract_docx(path: str) -> str:
     import docx  # carga perezosa
 
     document = docx.Document(path)
+    budget = _TextBudget()
     blocks: list[str] = []
     for paragraph in document.paragraphs:
         text = paragraph.text.strip()
         if text:
+            budget.add(text)
             blocks.append(text)
     for table in document.tables:
         lines = []
         for row in table.rows:
             cells = [cell.text.strip() for cell in row.cells]
             if any(cells):
-                lines.append(" | ".join(cells))
+                line = " | ".join(cells)
+                budget.add(line)
+                lines.append(line)
         if lines:
             blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
@@ -380,6 +434,7 @@ def _extract_xlsx(path: str) -> str:
 
     workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
+        budget = _TextBudget()
         blocks: list[str] = []
         cells_seen = 0
         for sheet in workbook.worksheets:
@@ -390,7 +445,9 @@ def _extract_xlsx(path: str) -> str:
                     raise _BudgetExceeded(f"más de {MAX_SHEET_CELLS} celdas")
                 values = [str(v).strip() for v in row if v is not None and str(v).strip()]
                 if values:
-                    lines.append(" | ".join(values))
+                    line = " | ".join(values)
+                    budget.add(line)
+                    lines.append(line)
             if len(lines) > 1:
                 blocks.append("\n".join(lines))
         return "\n\n".join(blocks)
