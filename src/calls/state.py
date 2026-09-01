@@ -96,6 +96,19 @@ def recover(call_id: str, reason: str, require_lease: bool) -> bool:
         return cur.rowcount == 1
 
 
+def by_remote_id(remote_id: str):
+    """La llamada saliente local a la que Meta asignó este identificador."""
+    with db.transaction() as conn:
+        return conn.execute(
+            "SELECT * FROM calls WHERE remote_id = ?", (remote_id,)
+        ).fetchone()
+
+
+def set_remote_id(call_id: str, remote_id: str) -> None:
+    with db.transaction() as conn:
+        conn.execute("UPDATE calls SET remote_id = ? WHERE call_id = ?", (remote_id, call_id))
+
+
 def orphans() -> list:
     """Las llamadas no terminales que sobrevivieron a un reinicio."""
     marks = ", ".join("?" for _ in ACTIVE_STATES)
@@ -167,18 +180,22 @@ def reconcile_seconds(call_id: str, used_seconds: int) -> None:
             "SELECT reserved_seconds FROM calls WHERE call_id = ?", (call_id,)
         ).fetchone()
         granted = row["reserved_seconds"] if row else 0
+        if granted <= 0:
+            return  # ya conciliada (o nunca reservada): idempotente
         refund = max(granted - used_seconds, 0)
         if refund:
             conn.execute(
                 "UPDATE usage SET call_seconds = MAX(call_seconds - ?, 0) WHERE day = ?",
                 (refund, _today()),
             )
+        # La reserva queda en 0: una segunda conciliación no devuelve nada.
         conn.execute(
-            "UPDATE calls SET seconds = ? WHERE call_id = ?", (used_seconds, call_id)
+            "UPDATE calls SET seconds = ?, reserved_seconds = 0 WHERE call_id = ?",
+            (used_seconds, call_id),
         )
     logger.info(
         "LLAMADA %s: consumo real %d s; devuelvo %d s al cupo del día (conciliación).",
-        call_id, used_seconds, max(granted - used_seconds, 0),
+        call_id, used_seconds, refund,
     )
 
 
@@ -230,7 +247,7 @@ def reserve_request(wa_id: str) -> tuple[bool, str]:
         ).fetchone()["n"]
         if week_count >= REQUESTS_PER_WEEK:
             return False, "ya le pedí permiso dos veces esta semana"
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO call_permission_requests (wa_id, requested_at) VALUES (?, ?)",
             (wa_id, now),
         )
@@ -241,7 +258,26 @@ def reserve_request(wa_id: str) -> tuple[bool, str]:
             " is_permanent = 0, expires_at = NULL, generation = ?, updated_at = ?",
             (wa_id, now, now, now, now),
         )
+        _last_request_id[wa_id] = cur.lastrowid
     return True, ""
+
+
+_last_request_id: dict[str, int] = {}
+
+
+def release_request(wa_id: str) -> None:
+    """Devuelve la última reserva de solicitud: SOLO ante un rechazo inequívoco
+    de Meta (4xx con respuesta) — la solicitud jamás llegó a la persona. Un
+    timeout o saturación NO pasa por aquí (pudo llegar)."""
+    row_id = _last_request_id.pop(wa_id, None)
+    with db.transaction() as conn:
+        if row_id is not None:
+            conn.execute("DELETE FROM call_permission_requests WHERE id = ?", (row_id,))
+        conn.execute(
+            "UPDATE call_permissions SET status = 'request_failed', updated_at = ?"
+            " WHERE wa_id = ? AND status = 'pending_request'",
+            (time.time(), wa_id),
+        )
 
 
 def apply_permission_reply(wa_id: str, response: str, is_permanent: bool,

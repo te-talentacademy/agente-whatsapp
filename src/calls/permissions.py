@@ -86,6 +86,9 @@ def handle_text_command(sender: str, text: str) -> str | None:
             f"({result.reason}). No la repito sola para no molestar; "
             "si no llega respuesta, inténtalo de nuevo mañana."
         )
+    # Rechazo inequívoco (4xx con respuesta): la solicitud jamás llegó a la
+    # persona, así que la reserva local se devuelve — solo lo ambiguo la conserva.
+    state.release_request(target)
     logger.warning("LLAMADA saliente: solicitud a %s rechazada (%s).", target, result.reason)
     return f"No pude enviar la solicitud a +{target}: {result.reason}."
 

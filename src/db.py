@@ -85,12 +85,15 @@ CREATE TABLE IF NOT EXISTS calls (
     ended_at REAL,
     seconds INTEGER NOT NULL DEFAULT 0,
     reserved_seconds INTEGER NOT NULL DEFAULT 0,
+    remote_id TEXT,
     last_error TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_calls_remote ON calls (remote_id);
 
--- Permisos de llamada saliente por persona: el estado vigente y su generación
--- (la marca de la última solicitud). Una respuesta tardía de una solicitud
--- vieja jamás pisa la generación vigente.
+-- Permisos de llamada saliente por persona: el estado vigente y la marca de
+-- la última solicitud (`generation`, solo contabilidad). El aviso de Meta no
+-- identifica a qué solicitud responde, así que la vigencia del permiso se
+-- verifica siempre justo antes de marcar (ver calls/manager.py).
 CREATE TABLE IF NOT EXISTS call_permissions (
     wa_id TEXT PRIMARY KEY,
     status TEXT NOT NULL,

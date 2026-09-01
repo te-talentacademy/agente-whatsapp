@@ -70,7 +70,8 @@ async def _drain_tasks():
 def _reset_phone(monkeypatch=None):
     manager._tasks.clear()
     manager._sessions.clear()
-    manager._outbound_pending.clear()
+    manager._outbound.clear()
+    manager._remote_to_local.clear()
     manager.STOP_EVENT = asyncio.Event()
 
 
@@ -1029,3 +1030,252 @@ def test_cierre_colgado_no_bloquea_la_contabilidad(monkeypatch):
     row = state.get("wacid.PRUEBA-1")
     assert row["state"] == "ended"
     assert state.daily_seconds_remaining() >= 595  # conciliación hecha
+
+
+# ---------------------------------------------------------------------------
+# Saliente: admisión antes de Meta (M4), respuesta única (M1), integral
+# ---------------------------------------------------------------------------
+
+
+class _OutSession:
+    """Sesión saliente sustituta: oferta fija, respuesta aceptada."""
+
+    def __init__(self):
+        self.closed = asyncio.Event()
+        self.hear_queue = asyncio.Queue()
+        self.completed = 0
+
+    async def offer_outbound(self, relay_result):
+        return "v=0\r\n(offer)"
+
+    async def complete_outbound(self, answer_sdp):
+        self.completed += 1
+        return True
+
+    async def close(self):
+        pass
+
+
+def _outbound_env(monkeypatch, **extra):
+    _calls_env(monkeypatch, FEATURE_OUTBOUND_CALLS="on", CALL_OWNER_NUMBER="5215550000099",
+               CALL_DAILY_MINUTES_LIMIT="10", **extra)
+    _fake_relay(monkeypatch)
+    monkeypatch.setattr(webrtc, "MediaSession", _OutSession)
+    monkeypatch.setattr(permissions, "_notify_owner", lambda text: None)
+
+
+def _grant_permission(wa_id):
+    state.reserve_request(wa_id)
+    state.apply_permission_reply(wa_id, "accept", True, None)
+
+
+def _answer_payload(remote_id, sender, sdp="v=0\r\n(answer)"):
+    payload = calls_payload(call_id=remote_id, caller=sender, sdp=sdp)
+    payload["entry"][0]["changes"][0]["value"]["calls"][0]["session"]["sdp_type"] = "answer"
+    return payload
+
+
+def test_saliente_reserva_y_ocupa_linea_antes_del_connect(monkeypatch):
+    """M4: cuando Meta recibe el connect, la fila, la reserva y la línea ya existen."""
+    from src.calls import graph
+
+    db.connect()
+    _reset_phone()
+    _outbound_env(monkeypatch)
+    _grant_permission("5215587650001")
+    seen = {}
+
+    def fake_connect(to, sdp):
+        with db.transaction() as conn:
+            row = conn.execute("SELECT * FROM calls WHERE direction = 'out'").fetchone()
+        seen["row_state"] = row["state"]
+        seen["reserved"] = row["reserved_seconds"]
+        seen["remaining"] = state.daily_seconds_remaining()
+        seen["busy"] = manager.active_calls()
+        return graph.CallActionResult(ok=True, call_id="wacid.META-OUT-1")
+
+    monkeypatch.setattr(graph, "connect", fake_connect)
+    monkeypatch.setattr(graph, "terminate", lambda cid: graph.CallActionResult(ok=True))
+    monkeypatch.setattr(manager, "RING_TIMEOUT_SECONDS", 0.3)
+
+    async def scenario():
+        refusal = await manager.start_outbound("5215587650001")
+        assert refusal is None
+        await _drain_tasks()
+
+    run(scenario())
+    assert seen["row_state"] == "accepting"
+    assert seen["reserved"] == 300           # 5 min concedidos ya apartados
+    assert seen["remaining"] == 300          # y descontados del día
+    assert seen["busy"] == 1                 # la línea ya está ocupada
+
+
+def test_saliente_no_entra_con_otra_llamada_en_linea(monkeypatch):
+    db.connect()
+    _reset_phone()
+    _outbound_env(monkeypatch)
+    _grant_permission("5215587650002")
+
+    async def scenario():
+        async def ocupa():
+            await asyncio.sleep(0.5)
+        manager._register_task("wacid.OCUPADA", ocupa())   # otra llamada viva
+        refusal = await manager.start_outbound("5215587650002")
+        await _drain_tasks()
+        return refusal
+
+    assert run(scenario()) == "ya hay una llamada en curso"
+    with db.transaction() as conn:
+        assert conn.execute("SELECT COUNT(*) AS n FROM calls").fetchone()["n"] == 0
+
+
+def test_respuesta_saliente_duplicada_no_crea_segunda_tarea(monkeypatch):
+    """M1: dos respuestas SDP en el mismo ciclo → una tarea, un complete, una conciliación."""
+    from src.calls import graph
+
+    db.connect()
+    _reset_phone()
+    _outbound_env(monkeypatch)
+    _grant_permission("5215587650003")
+    log = []
+    monkeypatch.setattr(graph, "connect", lambda to, sdp: (log.append("connect") or graph.CallActionResult(ok=True, call_id="wacid.META-OUT-3")))
+    monkeypatch.setattr(graph, "terminate", lambda cid: (log.append("terminate") or graph.CallActionResult(ok=True)))
+    converse_calls = []
+
+    async def fake_converse(session, caller, call_id, deadline_at, stop_event):
+        converse_calls.append(call_id)
+        await asyncio.sleep(0.2)
+        return "tope-llamada"
+
+    monkeypatch.setattr(voice_loop, "converse", fake_converse)
+
+    async def scenario():
+        assert await manager.start_outbound("5215587650003") is None
+        await asyncio.sleep(0.1)  # la tarea ya mandó el connect y espera
+        events = extract_call_events(_answer_payload("wacid.META-OUT-3", "5215587650003"), PNID)
+        await manager.dispatch_events(events)
+        await manager.dispatch_events(events)  # reenvío en el mismo ciclo
+        assert manager.active_calls() == 1
+        await _drain_tasks()
+
+    run(scenario())
+    assert log.count("connect") == 1
+    assert converse_calls and len(converse_calls) == 1
+    row = state.by_remote_id("wacid.META-OUT-3")
+    assert row["state"] == "ended" and row["reserved_seconds"] == 0
+    assert state.daily_seconds_remaining() >= 595  # conciliada UNA vez
+
+
+def test_saliente_integral_connect_respuesta_conversacion(monkeypatch):
+    """Flujo real: start_outbound → connect → respuesta → conversación → cierre."""
+    from src.calls import graph
+
+    db.connect()
+    _reset_phone()
+    _outbound_env(monkeypatch)
+    _grant_permission("5215587650004")
+    monkeypatch.setattr(graph, "connect", lambda to, sdp: graph.CallActionResult(ok=True, call_id="wacid.META-OUT-4"))
+    ended = []
+    monkeypatch.setattr(graph, "terminate", lambda cid: (ended.append(cid) or graph.CallActionResult(ok=True)))
+    spoken_to = []
+
+    async def fake_converse(session, caller, call_id, deadline_at, stop_event):
+        spoken_to.append(caller)
+        assert session.completed == 1
+        return "colgado"
+
+    monkeypatch.setattr(voice_loop, "converse", fake_converse)
+
+    async def scenario():
+        assert await manager.start_outbound("5215587650004") is None
+        await asyncio.sleep(0.1)
+        await manager.dispatch_events(
+            extract_call_events(_answer_payload("wacid.META-OUT-4", "5215587650004"), PNID)
+        )
+        await _drain_tasks()
+
+    run(scenario())
+    assert spoken_to == ["5215587650004"]
+    assert ended == ["wacid.META-OUT-4"]     # se cuelga con el id de Meta
+    assert state.by_remote_id("wacid.META-OUT-4")["state"] == "ended"
+    assert not manager._tasks and not manager._outbound and not manager._remote_to_local
+
+
+def test_saliente_sin_respuesta_devuelve_la_reserva(monkeypatch):
+    from src.calls import graph
+
+    db.connect()
+    _reset_phone()
+    _outbound_env(monkeypatch)
+    _grant_permission("5215587650005")
+    monkeypatch.setattr(graph, "connect", lambda to, sdp: graph.CallActionResult(ok=True, call_id="wacid.META-OUT-5"))
+    monkeypatch.setattr(graph, "terminate", lambda cid: graph.CallActionResult(ok=True))
+    monkeypatch.setattr(manager, "RING_TIMEOUT_SECONDS", 0.2)
+
+    async def scenario():
+        assert await manager.start_outbound("5215587650005") is None
+        await _drain_tasks()
+
+    run(scenario())
+    row = state.by_remote_id("wacid.META-OUT-5")
+    assert row["state"] == "failed" and "sin respuesta" in row["last_error"]
+    assert state.daily_seconds_remaining() == 600  # nunca hubo audio: devuelta
+
+
+def test_connect_ambiguo_conserva_reserva_e_inequivoco_devuelve(monkeypatch):
+    from src.calls import graph
+
+    db.connect()
+    _reset_phone()
+    _outbound_env(monkeypatch)
+    _grant_permission("5215587650006")
+    monkeypatch.setattr(graph, "connect", lambda to, sdp: graph.CallActionResult(ok=False, ambiguous=True, reason="red: Timeout"))
+
+    async def scenario():
+        assert await manager.start_outbound("5215587650006") is None
+        await _drain_tasks()
+
+    run(scenario())
+    assert state.daily_seconds_remaining() == 300  # ambiguo: conservada
+    _reset_phone()
+    monkeypatch.setattr(graph, "connect", lambda to, sdp: graph.CallActionResult(ok=False, reason="rechazado (400): permiso"))
+    run(scenario())
+    assert state.daily_seconds_remaining() == 300  # inequívoco: devuelta (no baja a 0)
+
+
+def test_solicitud_rechazada_inequivoca_devuelve_la_reserva(monkeypatch):
+    from src.calls import graph
+
+    db.connect()
+    monkeypatch.setenv("FEATURE_OUTBOUND_CALLS", "on")
+    monkeypatch.setenv("CALL_OWNER_NUMBER", "5215550000014")
+    monkeypatch.setattr(graph, "send_permission_request",
+                        lambda to: graph.CallActionResult(ok=False, reason="rechazado (400): número inválido"))
+    reply = permissions.handle_text_command("5215550000014", "llamar +521559000000")
+    assert "No pude enviar" in reply
+    # La reserva local se devolvió: se puede volver a pedir hoy mismo.
+    ok, _ = state.reserve_request("521559000000")
+    assert ok
+
+
+def test_terminate_antes_de_descolgar_cancela_la_saliente(monkeypatch):
+    from src.calls import graph
+
+    db.connect()
+    _reset_phone()
+    _outbound_env(monkeypatch)
+    _grant_permission("5215587650007")
+    monkeypatch.setattr(graph, "connect", lambda to, sdp: graph.CallActionResult(ok=True, call_id="wacid.META-OUT-7"))
+    monkeypatch.setattr(graph, "terminate", lambda cid: graph.CallActionResult(ok=True))
+
+    async def scenario():
+        assert await manager.start_outbound("5215587650007") is None
+        await asyncio.sleep(0.1)
+        await manager.dispatch_events(
+            extract_call_events(calls_payload("terminate", call_id="wacid.META-OUT-7"), PNID)
+        )
+        await _drain_tasks()
+
+    run(scenario())
+    assert state.by_remote_id("wacid.META-OUT-7")["state"] == "ended"
+    assert state.daily_seconds_remaining() == 600
