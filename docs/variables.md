@@ -83,7 +83,7 @@ Si arrancas sin volumen, funciona igual, pero te lo recuerda en los registros.
 
 | Variable | Qué hace | Valor de fábrica |
 |---|---|---|
-| `FEATURE_RAG` | Enciende la libreta: tu agente responde con TUS documentos (los archivos `.md` y `.txt` de la carpeta `conocimiento/` de tu copia). Necesita el cerebro encendido. Sin llaves ni servicios extra: la libreta vive dentro de tu propio servicio y se rearma en cada despliegue. | `off` |
+| `FEATURE_RAG` | Enciende la libreta: tu agente responde con TUS documentos de la carpeta `conocimiento/` de tu copia — `.md`, `.txt`, PDF (aunque sea escaneado), Word (`.docx`) y Excel (`.xlsx`). La conversión ocurre dentro de tu servicio en Railway, al redesplegar; nada se instala en tu computadora. Necesita el cerebro encendido. Un PDF escaneado necesita además `FEATURE_VISION=on` (el motor de visión es quien lee sus páginas). | `off` |
 
 ## Oídos, ojos y voz (se encienden en su fase)
 
@@ -94,7 +94,7 @@ se oye y lo que se ve entra al mismo turno que el texto.
 |---|---|---|
 | `FEATURE_VOICE_IN` | Los oídos: las notas de voz se transcriben y entran como texto de la persona — heredan los mismos blindajes que el texto. Tope: 2 notas por turno, 8 MB por nota. | `off` |
 | `FEATURE_VOICE_OUT` | La voz: además del texto (que SIEMPRE sale primero), la respuesta llega como nota de voz con TU voz clonada. Si la voz falla o tarda, no pasa nada: el texto ya está entregado. Respuestas muy largas o turnos viejos (más de 10 minutos) van solo en texto. | `off` |
-| `FEATURE_VISION` | Los ojos: entender fotos. Solo trabaja cuando hay una imagen adjunta — sin foto no se invoca ni gasta. Tope: 3 fotos por turno, 5 MB por foto. | `off` |
+| `FEATURE_VISION` | Los ojos: entender fotos. Solo trabaja cuando hay una imagen adjunta — sin foto no se invoca ni gasta. Tope: 3 fotos por turno, 5 MB por foto. También lee los PDF escaneados de tu libreta (`conocimiento/`): sin visión, esos PDF se saltan con aviso en los registros. | `off` |
 | `CARTESIA_API_KEY` | Tu llave de Cartesia (oídos y voz usan la misma cuenta). | — |
 | `CARTESIA_VOICE_ID` | El identificador de tu voz clonada en Cartesia (se crea en su panel en un minuto). | — |
 | `OPENROUTER_VISION_MODEL` | El segundo motor: el modelo que mira las fotos. Ya trae uno elegido, rápido y barato (`qwen/qwen3.8-flash`). Si lo cambias, elige uno que acepte imágenes. | el recomendado |

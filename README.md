@@ -119,10 +119,15 @@ archivo:
 2. **Su carácter**: edita `personalidad.md` desde GitHub (el lápiz arriba a la
    derecha del archivo): quién es, cómo habla, qué hace y qué no. Guarda, y
    Railway redespliega con la personalidad nueva.
-3. **Su conocimiento**: sube tus documentos (`.md` o `.txt`) a la carpeta
-   `conocimiento/` — catálogo, horarios, preguntas frecuentes — y enciende la
-   libreta con `FEATURE_RAG=on`. Los tres archivos de ejemplo describen un
-   negocio inventado para que pruebes antes de subir los tuyos.
+3. **Su conocimiento**: suelta tus documentos en la carpeta `conocimiento/`
+   desde la página de GitHub (botón «Add file» o arrastrar y soltar) y
+   enciende la libreta con `FEATURE_RAG=on`. Acepta `.md`, `.txt`, **PDF
+   (aunque sea escaneado), Word (`.docx`) y Excel (`.xlsx`)**: la conversión
+   ocurre sola en Railway al redesplegar, sin instalar nada en tu
+   computadora. Un PDF escaneado (páginas que son foto) necesita además el
+   motor de visión encendido (`FEATURE_VISION=on`), que es quien LEE esas
+   páginas. Los tres archivos de ejemplo describen un negocio inventado para
+   que pruebes antes de subir los tuyos.
 
 Tu cinturón de seguridad viene puesto: `DAILY_MESSAGE_LIMIT` (200 respuestas
 por día de fábrica) frena el gasto si algo se descontrola.

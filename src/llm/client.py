@@ -35,31 +35,53 @@ class LlmResult:
     text: str = ""
     retryable: bool = False
     refundable: bool = False
+    truncated: bool = False  # el modelo cortó por tope de salida: respuesta INCOMPLETA
     reason: str = ""
 
 
-def build_payload(messages: list[dict], model: str) -> dict:
+def build_payload(
+    messages: list[dict],
+    model: str,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+) -> dict:
     return {
         "model": model,
         "messages": messages,
-        "max_tokens": MAX_OUTPUT_TOKENS,
-        "temperature": 0.6,
+        "max_tokens": MAX_OUTPUT_TOKENS if max_tokens is None else max_tokens,
+        "temperature": 0.6 if temperature is None else temperature,
         "provider": dict(PRIVACY_POLICY),
     }
 
 
-def complete(messages: list[dict], model: str, api_key: str, title: str = "") -> LlmResult:
+def complete(
+    messages: list[dict],
+    model: str,
+    api_key: str,
+    title: str = "",
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+) -> LlmResult:
     """Pide una respuesta al modelo.
 
     `messages` ya viene en orden: el mensaje de sistema SIEMPRE primero, luego
     el historial y al final el turno del usuario. Algunos proveedores se
     confunden si el sistema llega en otra posición.
+
+    `max_tokens`/`temperature` permiten usos con contrato propio (como la
+    lectura de páginas escaneadas de la libreta); sin ellos, la conversación
+    conserva sus valores de siempre.
     """
     headers = {"Authorization": f"Bearer {api_key}"}
     if title:
         headers["X-Title"] = title[:60]
     try:
-        response = httpx.post(OPENROUTER_URL, headers=headers, json=build_payload(messages, model), timeout=TIMEOUT_SECONDS)
+        response = httpx.post(
+            OPENROUTER_URL,
+            headers=headers,
+            json=build_payload(messages, model, max_tokens, temperature),
+            timeout=TIMEOUT_SECONDS,
+        )
     except httpx.HTTPError as exc:
         # Red o timeout: ambiguo, pudo haberse procesado. No se devuelve cuota.
         return LlmResult(ok=False, retryable=True, reason=f"red: {exc.__class__.__name__}")
@@ -80,9 +102,11 @@ def complete(messages: list[dict], model: str, api_key: str, title: str = "") ->
 
     try:
         data = response.json()
-        text = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        text = choice["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError):
         return LlmResult(ok=False, reason="respuesta con forma inesperada")
     if not isinstance(text, str) or not text.strip():
         return LlmResult(ok=False, reason="respuesta vacía del modelo")
-    return LlmResult(ok=True, text=text.strip())
+    finish = choice.get("finish_reason") if isinstance(choice, dict) else None
+    return LlmResult(ok=True, text=text.strip(), truncated=(finish == "length"))

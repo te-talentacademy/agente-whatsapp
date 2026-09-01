@@ -57,6 +57,19 @@ CREATE TABLE IF NOT EXISTS usage (
     replies INTEGER NOT NULL DEFAULT 0,
     voice INTEGER NOT NULL DEFAULT 0
 );
+
+-- Páginas escaneadas de la libreta ya leídas por el motor de visión. Cada
+-- lectura cuesta dinero: se guarda por página para no volver a pagarla en el
+-- siguiente redespliegue (deploy-first rearma la libreta en cada cambio).
+-- `engine` versiona la lógica y el modelo: si cambian, se relee sola.
+CREATE TABLE IF NOT EXISTS ocr_cache (
+    doc_sha256 TEXT NOT NULL,
+    page_no INTEGER NOT NULL,
+    engine TEXT NOT NULL,
+    text TEXT NOT NULL,
+    extracted_at REAL NOT NULL,
+    PRIMARY KEY (doc_sha256, page_no, engine)
+);
 """
 
 

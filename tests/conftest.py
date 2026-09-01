@@ -38,6 +38,7 @@ def fresh_db(tmp_path, monkeypatch):
     from src.rag import index
 
     index._available = None
+    index.STOP_EVENT.clear()
     yield
     if db._conn is not None:
         db._conn.close()
