@@ -32,6 +32,7 @@ logger = logging.getLogger("agente")
 
 STOP_EVENT = asyncio.Event()
 ACCEPT_DEADLINE_SECONDS = 25.0   # margen propio dentro de la ventana de Meta
+CLOSE_TIMEOUT_SECONDS = 6.0      # cerrar el audio jamás retrasa la contabilidad
 
 _sessions: dict[str, object] = {}   # call_id -> MediaSession (llamadas vivas)
 _tasks: dict[str, asyncio.Task] = {}
@@ -268,13 +269,19 @@ async def _run_inbound(event: CallEvent) -> None:
         else:
             await asyncio.to_thread(graph.terminate, call_id)
     finally:
-        if session is not None:
-            await session.close()
         if answered_at is not None:
-            state.transition(call_id, "ended", ("active", "ending"),
-                             ended_at=time.time())
+            # La contabilidad va PRIMERO: cerrar el audio puede tardar y el
+            # cupo del día no espera a nadie.
+            end_at = time.time()
+            state.transition(call_id, "ended", ("active", "ending"), ended_at=end_at)
+            state.reconcile_seconds(call_id, int(end_at - answered_at))
+        if session is not None:
+            try:
+                await asyncio.wait_for(session.close(), CLOSE_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                logger.warning("LLAMADA %s: el cierre del audio no terminó a tiempo.", call_id)
+        if answered_at is not None:
             await asyncio.to_thread(graph.terminate, call_id)
-            state.reconcile_seconds(call_id, int(time.time() - answered_at))
 
 
 # ---------------------------------------------------------------------------
@@ -354,11 +361,16 @@ async def _run_outbound_answer(event: CallEvent, session) -> None:
                          ended_at=time.time())
         await asyncio.to_thread(graph.terminate, call_id)
     finally:
-        await session.close()
         if answered_at is not None:
-            state.transition(call_id, "ended", ("active", "ending"), ended_at=time.time())
+            end_at = time.time()
+            state.transition(call_id, "ended", ("active", "ending"), ended_at=end_at)
+            state.reconcile_seconds(call_id, int(end_at - answered_at))
+        try:
+            await asyncio.wait_for(session.close(), CLOSE_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.warning("LLAMADA %s: el cierre del audio no terminó a tiempo.", call_id)
+        if answered_at is not None:
             await asyncio.to_thread(graph.terminate, call_id)
-            state.reconcile_seconds(call_id, int(time.time() - answered_at))
 
 
 async def _best_effort_reject(call_id: str) -> None:

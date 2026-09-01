@@ -151,8 +151,11 @@ class MediaSession:
             self._reader_task.cancel()
         if self.pc is not None:
             try:
-                await self.pc.close()
-            except Exception:
+                # Con tope: cerrar la conexión puede colgarse si el otro lado
+                # desapareció de golpe (el relevo ya no contesta). La limpieza
+                # de la llamada JAMÁS espera para siempre a este cierre.
+                await asyncio.wait_for(self.pc.close(), timeout=5.0)
+            except (Exception, asyncio.TimeoutError):
                 pass
         self.closed.set()
 

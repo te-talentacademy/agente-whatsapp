@@ -171,6 +171,11 @@ async def _collect_utterance(session: webrtc.MediaSession, deadline_at: float,
                     silence_frames = 0
                     collected_frames = 0
                     continue
+                seconds = len(utterance) / 2 / webrtc.HEAR_RATE
+                logger.info(
+                    "LLAMADA: intervención de %.1f s (energía media %.0f).",
+                    seconds, _rms(bytes(utterance)),
+                )
                 return bytes(utterance)
 
 

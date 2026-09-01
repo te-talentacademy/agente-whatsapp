@@ -988,3 +988,44 @@ def test_resample_de_la_voz_al_aire():
     pcm_48k = webrtc.resample_to_speak(pcm_24k, 24000)
     # El doble de muestras (± bordes del filtro).
     assert abs(len(pcm_48k) - 2 * len(pcm_24k)) < 400
+
+
+def test_cierre_colgado_no_bloquea_la_contabilidad(monkeypatch):
+    """Si cerrar el audio se cuelga (el otro lado desapareció), la
+    conciliación del cupo sale igual y la tarea termina."""
+    db.connect()
+    _reset_phone()
+    _calls_env(monkeypatch, CALL_DAILY_MINUTES_LIMIT="10")
+    _fake_relay(monkeypatch)
+    _fake_graph(monkeypatch)
+    monkeypatch.setattr(manager, "CLOSE_TIMEOUT_SECONDS", 0.2)
+
+    class StuckSession:
+        def __init__(self):
+            self.closed = asyncio.Event()
+            self.hear_queue = asyncio.Queue()
+
+        async def answer_inbound(self, sdp, relay_result):
+            return "v=0\r\n(answer)"
+
+        async def close(self):
+            await asyncio.sleep(60)  # jamás termina solo
+
+    monkeypatch.setattr(webrtc, "MediaSession", StuckSession)
+
+    async def fake_converse(session, caller, call_id, deadline_at, stop_event):
+        return "colgado"
+
+    monkeypatch.setattr(voice_loop, "converse", fake_converse)
+
+    async def scenario():
+        started = time.time()
+        await manager.dispatch_events(extract_call_events(calls_payload(), PNID))
+        await _drain_tasks()
+        return time.time() - started
+
+    elapsed = run(scenario())
+    assert elapsed < 5.0  # el cierre colgado no retuvo la tarea
+    row = state.get("wacid.PRUEBA-1")
+    assert row["state"] == "ended"
+    assert state.daily_seconds_remaining() >= 595  # conciliación hecha
