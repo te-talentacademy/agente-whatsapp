@@ -1279,3 +1279,44 @@ def test_terminate_antes_de_descolgar_cancela_la_saliente(monkeypatch):
     run(scenario())
     assert state.by_remote_id("wacid.META-OUT-7")["state"] == "ended"
     assert state.daily_seconds_remaining() == 600
+
+
+def test_respuesta_en_el_limite_del_timbre_no_se_corta(monkeypatch):
+    """Si la respuesta gana la transición justo cuando vence el timbre, la
+    llamada sigue: jamás se termina ni se devuelve una contestada."""
+    from src.calls import graph
+
+    db.connect()
+    _reset_phone()
+    _outbound_env(monkeypatch)
+    _grant_permission("5215587650008")
+    monkeypatch.setattr(graph, "connect", lambda to, sdp: graph.CallActionResult(ok=True, call_id="wacid.META-OUT-8"))
+    ended = []
+    monkeypatch.setattr(graph, "terminate", lambda cid: (ended.append(cid) or graph.CallActionResult(ok=True)))
+    monkeypatch.setattr(manager, "RING_TIMEOUT_SECONDS", 0.15)
+    spoke = []
+
+    async def fake_converse(session, caller, call_id, deadline_at, stop_event):
+        spoke.append(call_id)
+        return "colgado"
+
+    monkeypatch.setattr(voice_loop, "converse", fake_converse)
+
+    async def scenario():
+        assert await manager.start_outbound("5215587650008") is None
+        await asyncio.sleep(0.05)
+        # La respuesta llega por la vía normal (transición guardada)…
+        local_id = manager._remote_to_local["wacid.META-OUT-8"]
+        assert state.transition(local_id, "active", ("accepting",), answered_at=time.time())
+        # …pero la tarea despierta por timeout, no por el evento.
+        await asyncio.sleep(0.2)
+        manager._outbound[local_id].answer_sdp = "v=0\r\n(answer)"
+        manager._outbound[local_id].answer_event.set()
+        await _drain_tasks()
+
+    run(scenario())
+    assert len(spoke) == 1                   # conversó: la respuesta ganó al timbre
+    assert ended == ["wacid.META-OUT-8"]     # se colgó al final, no por timeout
+    row = state.by_remote_id("wacid.META-OUT-8")
+    assert row["state"] == "ended"           # contestada y cerrada, no "sin respuesta"
+    assert state.daily_seconds_remaining() >= 595

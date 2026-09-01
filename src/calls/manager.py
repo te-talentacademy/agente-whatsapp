@@ -446,13 +446,21 @@ async def _run_outbound(local_id: str, to: str, granted: int) -> None:
         try:
             await asyncio.wait_for(runtime.answer_event.wait(), RING_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
-            logger.info("LLAMADA %s: nadie descolgó; la cancelo.", local_id)
-            state.transition(local_id, "failed", ("accepting",),
-                             last_error="sin respuesta", ended_at=time.time())
-            await asyncio.to_thread(graph.terminate, remote_id)
-            state.refund_full_reserve(local_id)  # jamás se conectó audio
-            await tell_owner(f"+{numbers.canonical(to)} no contestó la llamada.")
-            return
+            # La respuesta pudo llegar justo en el límite: solo se cancela si
+            # la transición a `active` NO ganó ya (una contestada jamás se corta).
+            if not state.transition(local_id, "failed", ("accepting",),
+                                    last_error="sin respuesta", ended_at=time.time()):
+                # La respuesta ganó: su SDP llega con la misma señal; esperarla.
+                try:
+                    await asyncio.wait_for(runtime.answer_event.wait(), 5.0)
+                except asyncio.TimeoutError:
+                    pass
+            else:
+                logger.info("LLAMADA %s: nadie descolgó; la cancelo.", local_id)
+                await asyncio.to_thread(graph.terminate, remote_id)
+                state.refund_full_reserve(local_id)  # jamás se conectó audio
+                await tell_owner(f"+{numbers.canonical(to)} no contestó la llamada.")
+                return
         if not runtime.answer_sdp:
             # Colgaron antes de descolgar (terminate): nada se conectó.
             state.refund_full_reserve(local_id)

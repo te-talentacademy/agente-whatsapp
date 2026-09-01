@@ -138,11 +138,12 @@ def daily_seconds_remaining() -> int | None:
 
 
 def reserve_seconds(call_id: str, granted: int) -> bool:
-    """Aparta los segundos concedidos ANTES de aceptar la llamada.
+    """Aparta los segundos concedidos ANTES de aceptar (entrante) o de marcar
+    (saliente).
 
     La reserva queda confirmada en la memoria en la misma transacción que la
-    anota en la llamada: cuando Meta reciba el accept, el gasto ya está
-    contado aquí. Devuelve False si el cupo del día ya no alcanza.
+    anota en la llamada: cuando Meta reciba el accept o el connect, el gasto
+    ya está contado aquí. Devuelve False si el cupo del día ya no alcanza.
     """
     limit_minutes = config.call_daily_minutes_limit()
     with db.transaction() as conn:
@@ -262,6 +263,9 @@ def reserve_request(wa_id: str) -> tuple[bool, str]:
     return True, ""
 
 
+# Memoria de proceso: basta para el flujo actual, que envía la solicitud en
+# el mismo hilo que la reservó. Si algún día el envío pasara a una cola, este
+# identificador tendría que persistirse junto a la reserva.
 _last_request_id: dict[str, int] = {}
 
 

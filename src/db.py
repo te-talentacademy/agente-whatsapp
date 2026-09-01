@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS calls (
     remote_id TEXT,
     last_error TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_calls_remote ON calls (remote_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_calls_remote ON calls (remote_id);
 
 -- Permisos de llamada saliente por persona: el estado vigente y la marca de
 -- la última solicitud (`generation`, solo contabilidad). El aviso de Meta no
