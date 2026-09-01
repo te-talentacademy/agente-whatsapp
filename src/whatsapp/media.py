@@ -16,7 +16,6 @@ from dataclasses import dataclass
 import httpx
 
 from src import config
-from src.whatsapp.send import GRAPH_BASE
 
 logger = logging.getLogger("agente")
 
@@ -74,7 +73,7 @@ def download(media_id: str, kind: str) -> MediaResult:
     cap = config.MAX_AUDIO_BYTES if kind == "audio" else config.MAX_IMAGE_BYTES
     headers = {"Authorization": f"Bearer {token}"}
     try:
-        meta = httpx.get(f"{GRAPH_BASE}/{media_id}", headers=headers, timeout=TIMEOUT_SECONDS)
+        meta = httpx.get(f"{config.graph_base_url()}/{media_id}", headers=headers, timeout=TIMEOUT_SECONDS)
         if meta.status_code >= 300:
             return _status_result(meta.status_code, "direccion")
         url = meta.json().get("url")

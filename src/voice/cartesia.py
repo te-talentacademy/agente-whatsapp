@@ -87,8 +87,15 @@ def transcribe(data: bytes, mime: str) -> VoiceResult:
     return VoiceResult(ok=False, reason="ningún modelo de oídos disponible")
 
 
-def synthesize(text: str) -> VoiceResult:
-    """La voz: texto -> audio MP3 con el clon del dueño."""
+# Formato por defecto de las notas de voz (F3). Las llamadas piden PCM crudo
+# con el parámetro opcional: mismo endpoint, otra envoltura de audio.
+MP3_FORMAT = {"container": "mp3", "encoding": "mp3", "sample_rate": 44100}
+PCM_SAMPLE_RATE = 24000
+PCM_FORMAT = {"container": "raw", "encoding": "pcm_s16le", "sample_rate": PCM_SAMPLE_RATE}
+
+
+def synthesize(text: str, output_format: dict | None = None) -> VoiceResult:
+    """La voz: texto -> audio con el clon del dueño (MP3 salvo pedido expreso)."""
     voice_id = config.cartesia_voice_id()
     if not voice_id:
         return VoiceResult(ok=False, refundable=True, reason="falta CARTESIA_VOICE_ID")
@@ -101,7 +108,7 @@ def synthesize(text: str) -> VoiceResult:
                 "transcript": text,
                 "voice": voice_id,
                 "language": "es",
-                "output_format": {"container": "mp3", "encoding": "mp3", "sample_rate": 44100},
+                "output_format": output_format or MP3_FORMAT,
             },
             timeout=TIMEOUT_SECONDS,
         )

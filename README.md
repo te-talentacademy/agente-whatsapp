@@ -148,3 +148,27 @@ Con el cerebro ya andando, tres variables despiertan los sentidos:
 
 El cinturón de la voz es `DAILY_VOICE_LIMIT` (100 solicitudes diarias de
 fábrica, oídos y voz juntos).
+
+## Enciende el teléfono
+
+El órgano final: tu agente descuelga llamadas de WhatsApp y contesta con tu
+voz. Necesita el cerebro y la voz ya encendidos, más el puente de audio:
+
+1. **El puente de audio**: crea una cuenta gratuita de Cloudflare, entra a la
+   sección **Realtime → TURN** y crea una **TURN key**. Copia sus dos valores
+   en Railway: `CLOUDFLARE_TURN_KEY_ID` y `CLOUDFLARE_TURN_API_TOKEN`. Sin
+   este puente el audio de una llamada no llega a un servicio en la nube.
+2. **Descuelga** (`FEATURE_CALLS=on`): desde ese redeploy, cuando alguien te
+   llame por WhatsApp, tu agente contesta, saluda con tu voz y conversa.
+   Atiende una llamada a la vez, con tope por llamada (`CALL_MAX_MINUTES`,
+   5 de fábrica) y por día (`CALL_DAILY_MINUTES_LIMIT`, 30 de fábrica).
+3. **Marca tú** (`FEATURE_OUTBOUND_CALLS=on` + `CALL_OWNER_NUMBER` con tu
+   número): escríbele a tu agente `llamar +52…` y él hace el resto — primero
+   le pide permiso a esa persona (WhatsApp lo exige, con razón), y cuando
+   acepta, marca y te va confirmando cada paso.
+
+El saludo y la despedida son tuyos (`CALL_GREETING_TEXT`,
+`CALL_GOODBYE_TEXT`), y si quieres que solo ciertos números puedan llamarte,
+lístalos en `CALL_ALLOWED_NUMBERS`. El detalle fino — permisos, límites y el
+arreglo de cada tropiezo — vive en la [guía de variables](docs/variables.md)
+y en la [guía de operación](docs/runbook-operacion.md).

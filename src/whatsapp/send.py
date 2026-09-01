@@ -13,7 +13,6 @@ import httpx
 
 from src import config
 
-GRAPH_BASE = "https://graph.facebook.com/v23.0"
 TIMEOUT_SECONDS = 15.0
 MAX_TEXT_LENGTH = 4096  # límite de WhatsApp por mensaje de texto
 
@@ -33,7 +32,7 @@ def send_text(to: str, text: str) -> SendResult:
     body = text[:MAX_TEXT_LENGTH]
     try:
         response = httpx.post(
-            f"{GRAPH_BASE}/{number_id}/messages",
+            f"{config.graph_base_url()}/{number_id}/messages",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "messaging_product": "whatsapp",
@@ -74,7 +73,7 @@ def upload_media(data: bytes, mime: str, filename: str) -> str | None:
         return None
     try:
         response = httpx.post(
-            f"{GRAPH_BASE}/{number_id}/media",
+            f"{config.graph_base_url()}/{number_id}/media",
             headers={"Authorization": f"Bearer {token}"},
             files={"file": (filename, data, mime)},
             data={"messaging_product": "whatsapp", "type": mime},
@@ -96,7 +95,7 @@ def send_audio(to: str, media_id: str) -> SendResult:
         return SendResult(ok=False, retryable=False, reason="faltan credenciales")
     try:
         response = httpx.post(
-            f"{GRAPH_BASE}/{number_id}/messages",
+            f"{config.graph_base_url()}/{number_id}/messages",
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "messaging_product": "whatsapp",

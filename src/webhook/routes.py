@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 
 from src import config, db
 from src.queue import store, worker
-from src.webhook.parse import extract_messages
+from src.webhook.parse import extract_call_events, extract_messages
 from src.webhook.signature import verify_signature
 
 logger = logging.getLogger("agente")
@@ -107,8 +107,26 @@ async def inbound(request: Request):
     except ValueError:
         return {"ignored": True}
 
-    # 5) Extraer los mensajes dirigidos a TU número y guardarlos.
-    messages = extract_messages(payload, own_number)
+    # 5) El teléfono primero: llamadas y respuestas de permiso van a su
+    #    encargado (rápido: reclama y agenda; la red corre en sus tareas).
+    #    Con el teléfono apagado no se carga ni un módulo de llamadas.
+    permission_wamids: set[str] = set()
+    if config.calls_enabled() or config.outbound_calls_enabled():
+        events = extract_call_events(payload, own_number)
+        if events:
+            from src.calls import manager  # carga perezosa
+
+            permission_wamids = {
+                e.wamid for e in events if e.kind == "permission_reply" and e.wamid
+            }
+            await manager.dispatch_events(events)
+
+    # 6) Extraer los mensajes dirigidos a TU número y guardarlos. Las
+    #    respuestas de permiso ya fueron atendidas arriba: no son conversación.
+    messages = [
+        m for m in extract_messages(payload, own_number)
+        if m.wamid not in permission_wamids
+    ]
     stored = 0
     for msg in messages:
         if store.enqueue(msg):
@@ -123,5 +141,5 @@ async def inbound(request: Request):
             else:
                 logger.info("MENSAJE RECIBIDO de %s (%s)", msg.sender, msg.kind)
 
-    # 6) Confirmar rápido; la respuesta al mensaje corre por dentro.
+    # 7) Confirmar rápido; la respuesta al mensaje corre por dentro.
     return {"received": stored}

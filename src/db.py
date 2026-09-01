@@ -70,6 +70,45 @@ CREATE TABLE IF NOT EXISTS ocr_cache (
     extracted_at REAL NOT NULL,
     PRIMARY KEY (doc_sha256, page_no, engine)
 );
+
+-- El teléfono: una fila por llamada. El primer aviso de Meta que logra el
+-- INSERT es el único que actúa (los reenvíos encuentran la fila y se apartan);
+-- los estados no terminales que sobreviven a un reinicio se cierran con
+-- motivo explícito al arrancar (jamás se abandonan en silencio).
+CREATE TABLE IF NOT EXISTS calls (
+    call_id TEXT PRIMARY KEY,
+    wa_id TEXT NOT NULL DEFAULT '',
+    direction TEXT NOT NULL DEFAULT 'in',
+    state TEXT NOT NULL DEFAULT 'claimed',
+    claimed_at REAL NOT NULL,
+    answered_at REAL,
+    ended_at REAL,
+    seconds INTEGER NOT NULL DEFAULT 0,
+    reserved_seconds INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT
+);
+
+-- Permisos de llamada saliente por persona: el estado vigente y su generación
+-- (la marca de la última solicitud). Una respuesta tardía de una solicitud
+-- vieja jamás pisa la generación vigente.
+CREATE TABLE IF NOT EXISTS call_permissions (
+    wa_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    is_permanent INTEGER NOT NULL DEFAULT 0,
+    expires_at REAL,
+    generation REAL NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL
+);
+
+-- Registro de solicitudes de permiso enviadas (para respetar los límites de
+-- Meta LOCALMENTE, antes de tocar su API: 1 por día y 2 por semana por persona).
+CREATE TABLE IF NOT EXISTS call_permission_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    wa_id TEXT NOT NULL,
+    requested_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_call_requests
+    ON call_permission_requests (wa_id, requested_at);
 """
 
 
@@ -97,6 +136,7 @@ _ADDED_COLUMNS = [
     ("jobs", "reply_upto", "INTEGER"),
     ("messages", "media_id", "TEXT"),
     ("usage", "voice", "INTEGER NOT NULL DEFAULT 0"),
+    ("usage", "call_seconds", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

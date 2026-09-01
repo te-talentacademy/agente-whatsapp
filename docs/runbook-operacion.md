@@ -130,6 +130,64 @@ está en la línea de al lado:
   modelo con visión con la misma política de privacidad del cerebro. Con los
   ramales apagados, nada de esto sale de tu servicio.
 
+## Si el teléfono no funciona
+
+El teléfono es el ramal con más piezas: cerebro + voz + el puente de audio
+(TURN de Cloudflare). Cada rechazo queda en los registros con su motivo, en
+este vocabulario:
+
+- `LLAMADA … rechazada: FEATURE_CALLS está apagado` → el interruptor.
+- `LLAMADA … rechazada: el cerebro está apagado o sin llave` → las llamadas
+  necesitan `FEATURE_BRAIN=on` y `OPENROUTER_API_KEY`.
+- `LLAMADA … rechazada: faltan CARTESIA_API_KEY / CARTESIA_VOICE_ID` → sin
+  voz no hay llamada.
+- `LLAMADA … rechazada: sin-relay-vigente` → faltan las dos llaves TURN de
+  Cloudflare (el puente de audio).
+- `el relevo rechazó la credencial (401): revisa las llaves TURN` → las
+  llaves TURN están mal copiadas o revocadas. Ver el fallo típico de abajo.
+- `LLAMADA … rechazada: ya hay una llamada en curso` → el agente atiende una
+  a la vez; la segunda persona recibe el rechazo y puede escribir por texto.
+- `tope diario de minutos de llamada alcanzado` → tu cinturón actuó; sube
+  `CALL_DAILY_MINUTES_LIMIT` si te quedó corto.
+- `LLAMADA …: quedó a medias (…); la cierro` → un reinicio o despliegue
+  interrumpió una llamada; el agente la cierra solo, con motivo (`reinicio`
+  o `lease-vencido`), y queda listo para la siguiente. No hay nada que hacer.
+- `LLAMADA …: aparto N segundos … (reserva)` / `consumo real N s; devuelvo
+  N s … (conciliación)` → la contabilidad del cupo diario: se aparta el
+  máximo al descolgar y se devuelve lo no usado al colgar. Si el servicio se
+  cae a mitad de llamada, lo apartado queda contado (el cupo jamás se regala).
+
+### El fallo típico, resuelto paso a paso: el puente de audio caído
+
+Síntoma: nadie puede llamarte; en los registros aparece, en cada intento,
+`el relevo rechazó la credencial (401): revisa las llaves TURN` y la llamada
+se rechaza. El texto sigue funcionando perfecto (los ramales son
+independientes).
+
+1. **Diagnóstico**: abre los registros de Railway y busca `relevo`. El 401
+   dice que Cloudflare no aceptó tus llaves: fueron borradas, rotadas o mal
+   copiadas.
+2. **Arreglo**: entra a tu panel de Cloudflare (sección Realtime → TURN),
+   crea o vuelve a copiar la TURN key, y pega sus dos valores en
+   `CLOUDFLARE_TURN_KEY_ID` y `CLOUDFLARE_TURN_API_TOKEN` en Railway.
+3. **Verificación**: Railway redespliega solo al guardar variables. Llama de
+   nuevo: en los registros verás `relevo de audio listo (TLS 443, vida …)`
+   seguido de `LLAMADA …: descolgada`. Puente reparado.
+
+### Si las llamadas salientes no salen
+
+1. `FEATURE_CALLS=on` **y** `FEATURE_OUTBOUND_CALLS=on` (doble candado).
+2. `CALL_OWNER_NUMBER` es TU número — solo tú puedes ordenar `llamar +52…`,
+   escribiéndoselo al agente por WhatsApp, tal cual, sin nada más en el
+   mensaje.
+3. El agente te confirma cada paso por texto: `Solicitud de permiso
+   enviada`, `Permiso recibido …: llamando ahora`, o el motivo exacto si no
+   pudo. Sin la aceptación de la persona no hay llamada: así funciona
+   WhatsApp, y es lo correcto.
+4. Las solicitudes de permiso tienen límite (1 al día, 2 por semana por
+   persona) y el agente lo respeta él solo — si te frena, te dice hasta
+   cuándo.
+
 ## Fichas agotadas
 
 Si un mensaje falló cinco veces seguidas, su ficha queda marcada como agotada

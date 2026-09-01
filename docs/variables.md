@@ -114,14 +114,51 @@ se oye y lo que se ve entra al mismo turno que el texto.
 
 ## El teléfono (se enciende en su fase)
 
+El teléfono necesita el cerebro encendido (`FEATURE_BRAIN` + su llave) y la
+voz de Cartesia (`CARTESIA_API_KEY` + `CARTESIA_VOICE_ID`): en una llamada,
+el agente escucha, piensa y contesta con tu voz clonada. Atiende UNA llamada
+a la vez — es un agente, no un conmutador.
+
 | Variable | Qué hace | Valor de fábrica |
 |---|---|---|
 | `FEATURE_CALLS` | Contestar llamadas de WhatsApp con tu voz. | `off` |
 | `FEATURE_OUTBOUND_CALLS` | Hacer llamadas (siempre pidiendo permiso antes). Doble candado: exige también `FEATURE_CALLS`. | `off` |
 | `CLOUDFLARE_TURN_KEY_ID` | El puente de audio de Cloudflare (primera de dos). | — |
 | `CLOUDFLARE_TURN_API_TOKEN` | El puente de audio de Cloudflare (segunda de dos). | — |
-| `CALL_MAX_MINUTES` | Tope de duración por llamada. | 5 |
+| `CALL_MAX_MINUTES` | Tope de duración por llamada. Nunca queda sin límite: un `0` aquí vuelve al recomendado. | 5 |
 | `CALL_DAILY_MINUTES_LIMIT` | Tope de minutos de llamada por día. Vacía = 30. `0` = sin límite. | 30 |
+| `CALL_ALLOWED_NUMBERS` | Lista opcional de números que pueden llamarte, separados por comas (`+52…, +34…`). Vacía = cualquiera puede llamar (con los topes de arriba cuidándote). | vacía |
+| `CALL_OWNER_NUMBER` | TU número de WhatsApp: el único que puede ordenar llamadas salientes escribiéndole al agente `llamar +52…`. Sin esta variable no hay salientes. | — |
+| `CALL_GREETING_TEXT` | El saludo al descolgar. | «¡Hola! Soy {tu agente}. ¿En qué te ayudo?» |
+| `CALL_GOODBYE_TEXT` | La despedida antes de colgar. | «¡Gracias por llamar! Hasta pronto.» |
+
+> **El puente de audio (las dos llaves TURN)**: un servicio en la nube no
+> recibe el audio de una llamada directo — hace falta un relevo. Se crea una
+> sola vez en el panel de Cloudflare (cuenta gratuita): sección **Realtime →
+> TURN**, crea una **TURN key** y copia sus dos valores (el Token ID y el API
+> token) a estas dos variables. El agente pide con ellas una credencial
+> efímera NUEVA por cada llamada, que caduca sola. Consejo de la propia
+> Cloudflare: usa una TURN key para practicar y otra distinta cuando salgas a
+> producción.
+
+> **Las salientes piden permiso, siempre**: WhatsApp no permite llamar a
+> nadie sin su permiso expreso. Cuando ordenas `llamar +52…`, el agente le
+> envía a esa persona una solicitud con botones; solo si acepta, marca. Meta
+> limita las solicitudes (1 por día y 2 por semana por persona) y el agente
+> respeta esos límites él solo, avisándote de cada paso: solicitud enviada,
+> permiso recibido, llamando, o rechazado.
+
+> **Privacidad del teléfono**: en una llamada, el audio de la persona viaja a
+> Cartesia (tu cuenta) para transcribirse, el texto al cerebro por OpenRouter
+> con la misma política del resto, y la respuesta vuelve a Cartesia para
+> locutarse con tu voz. El audio de la llamada NO se graba en tu servicio.
+> Nada de esto ocurre con el teléfono apagado.
+
+### Variable avanzada (no la toques salvo aviso)
+
+| Variable | Qué hace | Valor de fábrica |
+|---|---|---|
+| `GRAPH_BASE_URL` | La dirección base de la API de Meta, con su versión anclada. Solo cambiaría si Meta retirara esa versión. | la oficial anclada |
 
 ---
 

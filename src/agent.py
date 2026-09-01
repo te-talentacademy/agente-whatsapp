@@ -112,6 +112,17 @@ def _is_canned(reply: str) -> bool:
 def _compose_reply(job: Job) -> tuple[str | None, str | None]:
     """Devuelve (texto, motivo_de_reintento). Si hay motivo, no se responde aún."""
     written = [t.strip() for t in job.texts if t and t.strip()]
+
+    # --- Comando del dueño (FEATURE_OUTBOUND_CALLS=on) ------------------------
+    # "llamar +52..." desde el número del dueño ordena una llamada saliente.
+    # Es literal (no pasa por el cerebro) y solo el dueño puede usarlo.
+    if config.outbound_calls_enabled() and len(written) == 1:
+        from src.calls import permissions  # carga perezosa
+
+        command_reply = permissions.handle_text_command(job.sender, written[0])
+        if command_reply is not None:
+            return command_reply, None
+
     heard, postpone = _listen(job)
     if postpone:
         return None, postpone

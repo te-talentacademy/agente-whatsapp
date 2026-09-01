@@ -104,12 +104,21 @@ def _single_message(text: str) -> str:
     return cut + "\n(… sigo si me preguntas)"
 
 
-def think(sender: str, user_text: str, image_parts: list | None = None) -> Thought:
+def think(
+    sender: str,
+    user_text: str,
+    image_parts: list | None = None,
+    overlay: str = "",
+    max_tokens: int | None = None,
+) -> Thought:
     """Piensa la respuesta para `user_text`. Nunca lanza errores hacia arriba.
 
     Con fotos adjuntas (`image_parts`), el turno viaja al segundo motor (el
     modelo con visión); sin fotos, al motor de texto. Ese es todo el router:
     una regla, sin ambigüedad.
+
+    `overlay` añade una instrucción de sistema extra para el canal que llama
+    (p. ej. el teléfono pide frases cortas y habladas); vacío = sin cambio.
     """
     api_key = config.openrouter_api_key()
     if not api_key:
@@ -122,6 +131,8 @@ def think(sender: str, user_text: str, image_parts: list | None = None) -> Thoug
         notes = index.search(user_text)
 
     messages = [{"role": "system", "content": prompt.build_system_prompt(notes)}]
+    if overlay:
+        messages.append({"role": "system", "content": overlay})
     messages.extend(_history(sender))
     if image_parts:
         content = [{"type": "text", "text": user_text or "¿Qué ves en la imagen?"}]
@@ -136,7 +147,9 @@ def think(sender: str, user_text: str, image_parts: list | None = None) -> Thoug
         logger.warning("Tope diario de solicitudes alcanzado (DAILY_MESSAGE_LIMIT); respondo el aviso fijo.")
         return Thought(text=LIMIT_REACHED_TEXT)
 
-    result = client.complete(messages, model, api_key, title=config.agent_name())
+    result = client.complete(
+        messages, model, api_key, title=config.agent_name(), max_tokens=max_tokens
+    )
     if not result.ok:
         if result.refundable:
             _release()

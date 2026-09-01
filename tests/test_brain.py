@@ -37,7 +37,7 @@ def test_cerebro_responde_y_recuerda(monkeypatch):
     monkeypatch.setenv("AGENT_NAME", "Espiga")
     capturado = {}
 
-    def fake_complete(messages, model, api_key, title=""):
+    def fake_complete(messages, model, api_key, title="", **kwargs):
         capturado["messages"] = messages
         capturado["model"] = model
         return client.LlmResult(ok=True, text="La hogaza campesina cuesta $95.")

@@ -181,6 +181,16 @@ TURN_TTL_MARGIN_SECONDS = 120   # la credencial debe vivir MÁS que la llamada
 DEFAULT_CALL_GREETING = "¡Hola! Soy {name}. ¿En qué te ayudo?"
 DEFAULT_CALL_GOODBYE = "¡Gracias por llamar! Hasta pronto."
 
+# El teléfono atiende UNA llamada a la vez: el servicio corre en un solo
+# proceso y más líneas simultáneas multiplicarían el gasto sin control.
+# El valor es un techo fijo de esta versión, no una variable.
+CALL_MAX_CONCURRENT = 1
+CALL_CLAIM_LEASE_SECONDS = 60.0   # una llamada reclamada sin sesión viva más
+                                  # de esto se considera huérfana (ver runbook)
+CALL_IDLE_TIMEOUT_SECONDS = 30.0  # silencio total -> despedida y colgar
+MAX_UTTERANCE_SECONDS = 60.0      # una intervención no acumula audio sin fin
+DEFAULT_GRAPH_BASE_URL = "https://graph.facebook.com/v23.0"
+
 
 def calls_enabled() -> bool:
     return flag("FEATURE_CALLS")
@@ -225,6 +235,17 @@ def call_greeting_text() -> str:
 def call_goodbye_text() -> str:
     custom = os.environ.get("CALL_GOODBYE_TEXT", "").strip()
     return custom or DEFAULT_CALL_GOODBYE
+
+
+def call_owner_number() -> str:
+    """El número del dueño: el único que puede ordenar llamadas salientes."""
+    return os.environ.get("CALL_OWNER_NUMBER", "").strip()
+
+
+def graph_base_url() -> str:
+    """Dirección base de la API de Meta. Variable avanzada: no la toques
+    salvo que Meta retire la versión anclada (ver docs/variables.md)."""
+    return os.environ.get("GRAPH_BASE_URL", "").strip() or DEFAULT_GRAPH_BASE_URL
 
 
 # ---------------------------------------------------------------------------

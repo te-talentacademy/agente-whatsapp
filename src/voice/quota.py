@@ -32,3 +32,15 @@ def reserve() -> bool:
 def release() -> None:
     with db.transaction() as conn:
         conn.execute("UPDATE usage SET voice = MAX(voice - 1, 0) WHERE day = ?", (_today(),))
+
+
+def available() -> bool:
+    """Solo mira (no aparta): ¿queda cupo de voz hoy? Sirve de candado barato
+    antes de aceptar una llamada, que consumirá varias solicitudes."""
+    limit = config.daily_voice_limit()
+    if limit is None:
+        return True
+    with db.transaction() as conn:
+        row = conn.execute("SELECT voice FROM usage WHERE day = ?", (_today(),)).fetchone()
+    used = row["voice"] if row else 0
+    return used < limit

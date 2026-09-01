@@ -47,11 +47,27 @@ async def lifespan(app: FastAPI):
                 logger.exception("No pude armar la libreta; el índice anterior sigue en pie.")
 
         rebuild_task = asyncio.create_task(_rebuild_background())
+    calls_on = config.calls_enabled() or config.outbound_calls_enabled()
+    if calls_on:
+        # El teléfono despierta: registra el lazo (para el comando del dueño)
+        # y cierra con motivo explícito lo que un reinicio dejó a medias.
+        from src.calls import manager as calls_manager
+        from src.calls import permissions as calls_permissions
+
+        calls_manager.STOP_EVENT.clear()
+        calls_permissions.register_loop(asyncio.get_running_loop())
+        await asyncio.to_thread(calls_manager.boot_sweep)
     task = asyncio.create_task(worker.run_forever())
     logger.info("Agente listo. Esperando el primer mensaje.")
     try:
         yield
     finally:
+        if calls_on:
+            # Primero el teléfono: despedida y colgado cooperativo de las
+            # llamadas vivas ANTES de apagar el resto.
+            from src.calls import manager as calls_manager
+
+            await calls_manager.shutdown(timeout=20.0)
         task.cancel()
         if rebuild_task is not None:
             # Apagado cooperativo: la señal corta el rearme entre solicitudes
