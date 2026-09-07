@@ -651,6 +651,7 @@ def test_respuesta_de_permiso_no_se_encola_como_conversacion(monkeypatch):
     db.connect()
     _reset_phone()
     monkeypatch.setenv("FEATURE_OUTBOUND_CALLS", "on")
+    monkeypatch.setenv("FEATURE_CALLS", "on")
     captured = {}
 
     async def fake_dispatch(events):
@@ -677,6 +678,7 @@ def test_comando_solo_del_dueno_y_con_interruptor(monkeypatch):
     # Apagado: ni el dueño puede.
     assert permissions.handle_text_command("52155500001", "llamar +52111") is None
     monkeypatch.setenv("FEATURE_OUTBOUND_CALLS", "on")
+    monkeypatch.setenv("FEATURE_CALLS", "on")
     monkeypatch.setenv("CALL_OWNER_NUMBER", "+52 155 500 0001")
     # Otro número no es el dueño.
     assert permissions.handle_text_command("52155599999", "llamar +52111") is None
@@ -684,11 +686,37 @@ def test_comando_solo_del_dueno_y_con_interruptor(monkeypatch):
     assert permissions.handle_text_command("52155500001", "hola, ¿me llamas?") is None
 
 
+def test_comando_con_feature_calls_apagado_no_pide_permiso(monkeypatch):
+    """Doble candado: FEATURE_OUTBOUND_CALLS=on sin FEATURE_CALLS no manda la
+    solicitud de permiso (nadie recibe una petición para una llamada imposible)
+    ni gasta el límite local; el dueño recibe el motivo."""
+    from src.calls import graph
+
+    db.connect()
+    _reset_phone()
+    monkeypatch.setenv("FEATURE_OUTBOUND_CALLS", "on")
+    monkeypatch.delenv("FEATURE_CALLS", raising=False)
+    monkeypatch.setenv("CALL_OWNER_NUMBER", "5215550000020")
+    sent = []
+    monkeypatch.setattr(graph, "send_permission_request",
+                        lambda to: (sent.append(to) or graph.CallActionResult(ok=True)))
+    reply = permissions.handle_text_command("5215550000020", "llamar +52 155 512 9999")
+    assert "FEATURE_CALLS" in reply
+    assert sent == []
+    with db.transaction() as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM call_permission_requests WHERE wa_id = ?",
+                           ("521555129999",)).fetchone()
+        assert row["n"] == 0
+    # Texto que no es el comando: sigue al cerebro, sin aviso.
+    assert permissions.handle_text_command("5215550000020", "hola") is None
+
+
 def test_comando_pide_permiso_y_confirma_estados(monkeypatch):
     from src.calls import graph
 
     db.connect()
     monkeypatch.setenv("FEATURE_OUTBOUND_CALLS", "on")
+    monkeypatch.setenv("FEATURE_CALLS", "on")
     monkeypatch.setenv("CALL_OWNER_NUMBER", "5215550000010")
     sent = []
     monkeypatch.setattr(graph, "send_permission_request",
@@ -707,6 +735,7 @@ def test_solicitud_ambigua_conserva_la_reserva(monkeypatch):
 
     db.connect()
     monkeypatch.setenv("FEATURE_OUTBOUND_CALLS", "on")
+    monkeypatch.setenv("FEATURE_CALLS", "on")
     monkeypatch.setenv("CALL_OWNER_NUMBER", "5215550000011")
     monkeypatch.setattr(graph, "send_permission_request",
                         lambda to: graph.CallActionResult(ok=False, ambiguous=True, reason="red: Timeout"))
@@ -720,6 +749,7 @@ def test_solicitud_ambigua_conserva_la_reserva(monkeypatch):
 def test_permiso_vigente_llama_directo(monkeypatch):
     db.connect()
     monkeypatch.setenv("FEATURE_OUTBOUND_CALLS", "on")
+    monkeypatch.setenv("FEATURE_CALLS", "on")
     monkeypatch.setenv("CALL_OWNER_NUMBER", "5215550000012")
     state.reserve_request("521557000000")
     state.apply_permission_reply("521557000000", "accept", True, None)
@@ -732,6 +762,7 @@ def test_respuesta_aceptada_marca_y_avisa(monkeypatch):
     db.connect()
     _reset_phone()
     monkeypatch.setenv("FEATURE_OUTBOUND_CALLS", "on")
+    monkeypatch.setenv("FEATURE_CALLS", "on")
     monkeypatch.setenv("CALL_OWNER_NUMBER", "5215550000013")
     state.reserve_request("521558000000")
     notified = []
@@ -1248,6 +1279,7 @@ def test_solicitud_rechazada_inequivoca_devuelve_la_reserva(monkeypatch):
 
     db.connect()
     monkeypatch.setenv("FEATURE_OUTBOUND_CALLS", "on")
+    monkeypatch.setenv("FEATURE_CALLS", "on")
     monkeypatch.setenv("CALL_OWNER_NUMBER", "5215550000014")
     monkeypatch.setattr(graph, "send_permission_request",
                         lambda to: graph.CallActionResult(ok=False, reason="rechazado (400): número inválido"))

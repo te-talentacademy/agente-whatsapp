@@ -55,6 +55,10 @@ def handle_text_command(sender: str, text: str) -> str | None:
     match = COMMAND_RE.match(text or "")
     if not match:
         return None
+    if not config.calls_enabled():
+        # Doble candado (docs/variables.md): sin FEATURE_CALLS no se pide
+        # permiso a nadie para una llamada que el teléfono no va a marcar.
+        return "FEATURE_CALLS está apagado: enciéndelo también para poder llamar."
     target = numbers.canonical(match.group(1))
     if len(target) < 7:
         return "Ese número no se ve completo. Escríbeme: llamar +52..."
