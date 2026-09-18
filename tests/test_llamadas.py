@@ -437,6 +437,54 @@ def test_accept_rechazado_inequivoco_devuelve_la_reserva(monkeypatch):
     assert state.daily_seconds_remaining() == 600  # devuelta completa
 
 
+def test_relevo_parsea_objeto_y_lista_y_solo_toma_credenciales(monkeypatch):
+    """La respuesta del relevo puede traer `iceServers` como objeto o como lista;
+    solo importan usuario y credencial (las direcciones son las fijas del kit).
+    Sin credencial completa → fail-closed. Sin 201 → fail-closed con el código."""
+    import httpx
+
+    from src.calls import relay
+
+    monkeypatch.setenv("CLOUDFLARE_TURN_KEY_ID", "kid")
+    monkeypatch.setenv("CLOUDFLARE_TURN_API_TOKEN", "tok")
+    canned = {}
+
+    class Response:
+        def __init__(self, status, body):
+            self.status_code = status
+            self._body = body
+
+        def json(self):
+            return self._body
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        assert "/turn/keys/kid/credentials/generate-ice-servers" in url
+        return Response(*canned["r"])
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    canned["r"] = (201, {"iceServers": {"urls": ["turn:x"], "username": "u1", "credential": "c1"}})
+    got = relay.fetch(60)
+    assert (got.ok, got.username, got.credential) == (True, "u1", "c1")
+    canned["r"] = (201, {"iceServers": [{"urls": ["stun:x"]}, {"username": "u2", "credential": "c2"}]})
+    got = relay.fetch(60)
+    assert (got.ok, got.username, got.credential) == (True, "u2", "c2")
+    canned["r"] = (201, {"iceServers": [{"urls": ["turn:x"], "username": "u3"}]})
+    got = relay.fetch(60)
+    assert not got.ok and "incompleta" in got.reason
+    canned["r"] = (401, {})
+    got = relay.fetch(60)
+    assert not got.ok and "401" in got.reason
+
+
+def test_httpx_no_anota_urls_a_info():
+    """La URL del relevo lleva el TURN Key ID: httpx no la escribe en el registro."""
+    import logging
+
+    import src.main  # noqa: F401  (configura el logging al importarse)
+
+    assert logging.getLogger("httpx").level >= logging.WARNING
+
+
 def test_relevo_caido_rechaza_y_devuelve(monkeypatch):
     """El fallo simulado del runbook: sin relevo vigente no hay llamada."""
     db.connect()

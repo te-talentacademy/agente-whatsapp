@@ -69,12 +69,16 @@ def fetch(ttl_seconds: int) -> RelayResult:
         return RelayResult(ok=False, reason="respuesta del relevo con forma inesperada")
     # El esquema oficial devuelve un objeto o una lista; solo importan las
     # credenciales (las direcciones del relevo son las fijas de arriba).
-    entries = ice if isinstance(ice, list) else [ice] if ice else []
-    cred = next(
-        (e for e in entries if isinstance(e, dict) and e.get("username") and e.get("credential")),
-        None,
-    )
-    if not cred:
+    if isinstance(ice, dict):
+        ice = [ice]
+    username = credential = ""
+    for entry in ice if isinstance(ice, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("username") and entry.get("credential"):
+            username, credential = str(entry["username"]), str(entry["credential"])
+            break
+    if not username:
         return RelayResult(ok=False, reason="credencial de relevo incompleta")
     logger.info("LLAMADA: relevo de audio listo (TLS 443, vida %d s).", int(ttl_seconds))
-    return RelayResult(ok=True, username=cred["username"], credential=cred["credential"])
+    return RelayResult(ok=True, username=username, credential=credential)

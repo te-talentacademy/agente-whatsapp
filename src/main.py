@@ -20,6 +20,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
+# httpx anota a INFO cada URL que llama; la del relevo de audio lleva tu
+# CLOUDFLARE_TURN_KEY_ID dentro. No es la llave secreta, pero tampoco tiene
+# por qué quedar en los registros de tu servidor: solo sus avisos y errores.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("agente")
 
 
