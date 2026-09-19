@@ -172,3 +172,19 @@ El saludo y la despedida son tuyos (`CALL_GREETING_TEXT`,
 lístalos en `CALL_ALLOWED_NUMBERS`. El detalle fino — permisos, límites y el
 arreglo de cada tropiezo — vive en la [guía de variables](docs/variables.md)
 y en la [guía de operación](docs/runbook-operacion.md).
+
+---
+
+## ¿Dudas?
+
+Este repositorio no tiene sección de incidencias: las dudas se atienden en el
+portal de la academia, donde alguien las lee y las responde.
+
+**Escribe tu duda aquí: <https://app.talent-academy.com/es/preguntas>**
+
+Antes de preguntar, dos atajos que resuelven casi todo: la [guía de
+variables](docs/variables.md) explica qué hace cada interruptor y qué valor
+espera, y la [guía de operación](docs/runbook-operacion.md) lleva síntoma por
+síntoma hasta el arreglo. Si aun así algo no cuadra, copia en tu pregunta las
+líneas del registro donde aparece el problema: con eso se resuelve mucho más
+rápido.

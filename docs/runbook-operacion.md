@@ -194,3 +194,11 @@ Si un mensaje falló cinco veces seguidas, su ficha queda marcada como agotada
 y deja de reintentar para no atascar la fila. En los registros queda el último
 error. Arregla la causa (casi siempre una llave) y pide que te vuelvan a
 escribir: un mensaje nuevo de esa persona revive la ficha desde cero.
+
+---
+
+## Cuando esta guía no alcanza
+
+Si el síntoma no está aquí o el arreglo no funcionó, pregunta en el portal de
+la academia: <https://app.talent-academy.com/es/preguntas>. Copia en tu
+pregunta las líneas del registro donde aparece el problema.
